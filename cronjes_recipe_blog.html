@@ -389,37 +389,45 @@ const CC={Breakfast:'#FFF0D0',Lunch:'#E2F2E0',Dinner:'#D5E8F5',Dessert:'#FFD6E8'
 const CUSTOMCC='#E0EEF0';
 const FE=['🍝','🥗','🍜','🥘','🍲','🍛','🥩','🍕','🥞','🧆','🍗','🥕','🥧','🍱','🫔','🫕'];
 
-function getCustomCats(){try{return JSON.parse(localStorage.getItem(CK)||'[]');}catch(e){return[];}}
-function saveCustomCats(arr){localStorage.setItem(CK,JSON.stringify(arr));}
+// Safe storage — falls back to in-memory if localStorage is blocked (sandboxed iframes etc.)
+const _mem={};
+const store={
+  get(k){try{return store.get(k);}catch(e){return _mem[k]??null;}},
+  set(k,v){try{store.set(k,v);}catch(e){_mem[k]=v;}},
+  remove(k){try{store.remove(k);}catch(e){delete _mem[k];}}
+};
+function saveCustomCats(arr){store.set(CK,JSON.stringify(arr));}
 function allCats(){return[...CATS,...getCustomCats().filter(c=>!CATS.includes(c))];}
 function catEmoji(c){return CE[c]||'🍴';}
 function catColor(c){return CC[c]||CUSTOMCC;}
 let recs=[],tab='a',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null;
 
 function load(){
-  try{const v=localStorage.getItem(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
-  if(!localStorage.getItem(WK))go('welcome');
+  try{const v=store.get(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
+  if(!store.get(WK))go('welcome');
   else if(!getKey())go('settings');
   else{buildChips();render();}
 }
-function save(){try{localStorage.setItem(SK,JSON.stringify(recs));}catch(e){}}
-function welcomeDone(){localStorage.setItem(WK,'1');if(!getKey())go('settings');else{buildChips();render();go('main');}}
+function save(){try{store.set(SK,JSON.stringify(recs));}catch(e){}}
+function welcomeDone(){store.set(WK,'1');if(!getKey())go('settings');else{buildChips();render();go('main');}}
 
-function getKey(){return localStorage.getItem(KK)||'';}
+function getKey(){return store.get(KK)||'';}
 function saveKey(){
   const v=document.getElementById('keyinp').value.trim();
   if(!v.startsWith('gsk_')){alert('That doesn\'t look like a valid Groq key. It should start with gsk_');return;}
-  localStorage.setItem(KK,v);
+  store.set(KK,v);
   document.getElementById('keyinp').value='';
   showKinfo();alert('API key saved ✓');buildChips();render();go('main');
 }
-function clearKey(){if(!confirm('Remove saved API key?'))return;localStorage.removeItem(KK);document.getElementById('kinfo').style.display='none';}
+function clearKey(){if(!confirm('Remove saved API key?'))return;store.remove(KK);document.getElementById('kinfo').style.display='none';}
 function showKinfo(){document.getElementById('kinfo').style.display=getKey()?'block':'none';}
 
 function go(s){
+  const ids={main:'sm',add:'sadd',detail:'sdet',settings:'sset',welcome:'swel'};
   document.querySelectorAll('.scr').forEach(x=>x.classList.remove('on'));
-  ({main:'sm',add:'sadd',detail:'sdet',settings:'sset',welcome:'swel'})[s];
-  document.getElementById({main:'sm',add:'sadd',detail:'sdet',settings:'sset',welcome:'swel'}[s]).classList.add('on');
+  const el=document.getElementById(ids[s]);
+  if(!el)return;
+  el.classList.add('on');
   if(s==='add')resetAdd();
   if(s==='main'){buildChips();render();}
   if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();}
@@ -513,7 +521,8 @@ function saveCatEdit(){
   document.getElementById('dcatb').style.display='';
   sel.style.display='none';
   buildChips();
-}const r=recs.find(x=>x.id===rid);if(!r)return;r.favourite=!r.favourite;updStar(r.favourite);save();}
+}
+function togFav(){const r=recs.find(x=>x.id===rid);if(!r)return;r.favourite=!r.favourite;updStar(r.favourite);save();}
 function renderCmts(r){
   const cmts=r.comments||[];
   document.getElementById('cmtlist').innerHTML=cmts.length?cmts.map(c=>`<div class="cmtitem"><div class="cmttxt">${c.text}</div><div class="cmtrow"><div class="cmtdate">${fmtDate(c.date)}</div><button class="cmtrm" onclick="delCmt('${c.id}')">Remove</button></div></div>`).join(''):`<p style="font-size:13px;color:var(--mu);font-family:Arial,sans-serif;margin-bottom:10px;">No notes yet.</p>`;
@@ -589,12 +598,12 @@ function deleteCustomCat(c){
 }
 
 function loadSyncFields(){
-  const k=localStorage.getItem(JBK)||'';
-  const b=localStorage.getItem(JBB)||'';
+  const k=store.get(JBK)||'';
+  const b=store.get(JBB)||'';
   document.getElementById('jbkey').value=''; // keep password hidden
   document.getElementById('jbbin').value=b;
   const si=document.getElementById('syncinfo');
-  const last=localStorage.getItem('cronjes_lastsync');
+  const last=store.get('cronjes_lastsync');
   if(b){si.textContent='Bin ID: '+b+(last?' · Last synced: '+new Date(last).toLocaleString('en-NZ',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'');si.style.display='block';}
   else{si.style.display='none';}
 }
@@ -602,8 +611,8 @@ function loadSyncFields(){
 function saveSyncCreds(){
   const k=document.getElementById('jbkey').value.trim();
   const b=document.getElementById('jbbin').value.trim();
-  if(k)localStorage.setItem(JBK,k);
-  if(b)localStorage.setItem(JBB,b);
+  if(k)store.set(JBK,k);
+  if(b)store.set(JBB,b);
 }
 
 function setSyncResult(msg,ok){
@@ -624,8 +633,8 @@ function mergeRecipes(local,remote){
 
 async function syncNow(){
   saveSyncCreds();
-  const key=localStorage.getItem(JBK)||document.getElementById('jbkey').value.trim();
-  let binId=localStorage.getItem(JBB)||document.getElementById('jbbin').value.trim();
+  const key=store.get(JBK)||document.getElementById('jbkey').value.trim();
+  let binId=store.get(JBB)||document.getElementById('jbbin').value.trim();
   if(!key){setSyncResult('Please enter your JSONBin Master Key first.',false);return;}
   setSyncResult('Syncing…',true);
   try{
@@ -639,9 +648,9 @@ async function syncNow(){
       const cd=await cr.json();
       if(cd.message&&!cd.metadata)throw new Error(cd.message);
       binId=cd.metadata.id;
-      localStorage.setItem(JBB,binId);
+      store.set(JBB,binId);
       document.getElementById('jbbin').value=binId;
-      localStorage.setItem('cronjes_lastsync',new Date().toISOString());
+      store.set('cronjes_lastsync',new Date().toISOString());
       loadSyncFields();
       setSyncResult(`✓ New bin created!\n\nBin ID: ${binId}\n\nCopy this ID to your other device, paste it into the Bin ID field there, and tap Sync Now.`,true);
       return;
@@ -663,7 +672,7 @@ async function syncNow(){
     if(pd.message&&!pd.record)throw new Error(pd.message);
     const added=merged.length-recs.length;
     recs=merged;save();buildChips();render();
-    localStorage.setItem('cronjes_lastsync',new Date().toISOString());
+    store.set('cronjes_lastsync',new Date().toISOString());
     loadSyncFields();
     setSyncResult(`✓ Synced! ${merged.length} recipes in collection.${added>0?' '+added+' new recipe'+(added!==1?'s':'')+ ' pulled from cloud.':''}`,true);
   }catch(e){setSyncResult('Sync failed: '+(e.message||e),false);}
@@ -696,10 +705,12 @@ function showLoad(m){document.getElementById('loader').style.display='flex';docu
 function hideLoad(){document.getElementById('loader').style.display='none';}
 function showErr(m){const e=document.getElementById('errmsg');e.textContent=m;e.style.display='block';}
 
-const PROMPT=`Extract the recipe from the provided content and return ONLY valid JSON with no markdown, no backticks, no extra text:
+function getPrompt(){
+return `Extract the recipe from the provided content and return ONLY valid JSON with no markdown, no backticks, no extra text:
 {"title":"Recipe Name","servings":"4 servings","time":"30 mins","cuisine":"Italian","category":"Dinner","ingredients":["200g pasta","2 eggs","50g cheese"],"steps":["Boil pasta in salted water for 10 minutes.","Whisk eggs with cheese."],"notes":"Optional tips here"}
-category should be the best match from: ${()=>allCats().join(', ')} — or choose the closest fit. If truly unknown use "Other".
+Pick the best category from: ${allCats().join(', ')} — or choose the closest fit. If truly unknown use "Other".
 ingredients and steps must be arrays of strings. If a value is unknown use null.`;
+}
 
 async function callGroq(parts){
   const key=getKey();if(!key)throw new Error('No API key. Tap ⚙️ Settings.');
@@ -726,7 +737,7 @@ async function doExtract(){
   else{if(!dtxt){showErr('Please select a Word document first.');return;}showLoad('Reading your Word document...');await extDoc();}
 }
 async function extImg(){
-  try{const[hd,b64]=fb64.split(',');const mime=hd.match(/:(.*?);/)[1];proc(await callGroq([{inline_data:{mime_type:mime,data:b64}},{text:PROMPT}]),fb64);}
+  try{const[hd,b64]=fb64.split(',');const mime=hd.match(/:(.*?);/)[1];proc(await callGroq([{inline_data:{mime_type:mime,data:b64}},{text:getPrompt()}]),fb64);}
   catch(e){hideLoad();showErr('Could not read image. ('+(e.message||e)+')');}
 }
 async function fetchViaProxy(u){
@@ -741,11 +752,11 @@ async function extUrl(u){
     const txt=html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\s{3,}/g,'\n').trim().slice(0,8000);
     if(!txt)throw new Error('No text found on page');
     showLoad('Extracting recipe...');
-    proc(await callGroq([{text:`Webpage text from ${u}:\n\n${txt}\n\n${PROMPT}`}]),null);
+    proc(await callGroq([{text:`Webpage text from ${u}:\n\n${txt}\n\n${getPrompt()}`}]),null);
   }catch(e){hideLoad();showErr('Could not fetch recipe. ('+(e.message||e)+')');}
 }
 async function extDoc(){
-  try{proc(await callGroq([{text:`Word document text:\n\n${dtxt.slice(0,7000)}\n\n${PROMPT}`}]),null);}
+  try{proc(await callGroq([{text:`Word document text:\n\n${dtxt.slice(0,7000)}\n\n${getPrompt()}`}]),null);}
   catch(e){hideLoad();showErr('Could not extract recipe. ('+(e.message||e)+')');}
 }
 
@@ -794,7 +805,12 @@ async function genFoodImage(id,title){
   }catch(e){/* silent fail - emoji stays */}
 }
 
-load();
+document.addEventListener('DOMContentLoaded', function(){
+  try{ load(); }
+  catch(e){
+    document.body.innerHTML='<div style="padding:40px;font-family:Arial,sans-serif;color:#a03030;"><h2>App Error</h2><pre style="font-size:12px;white-space:pre-wrap;">'+e.stack+'</pre></div>';
+  }
+});
 </script>
 </body>
 </html>
