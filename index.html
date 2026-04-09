@@ -153,7 +153,9 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 .wf-ico{font-size:26px;flex-shrink:0;margin-top:1px;}
 .wf-txt h4{font-size:14px;color:var(--tx);margin-bottom:3px;}
 .wf-txt p{font-size:12px;color:var(--mu);font-family:Arial,sans-serif;line-height:1.6;}
-.wel-note{font-size:12px;color:var(--mu);font-family:Arial,sans-serif;text-align:center;margin-bottom:14px;line-height:1.7;}
+.wel-note{font-size:12px;color:var(--mu);font-family:Arial,sans-serif;text-align:center;margin-bottom:20px;line-height:1.7;}
+.wel-cta{display:flex;align-items:center;justify-content:center;font-size:18px;padding:18px;border-radius:32px;background:var(--tc);box-shadow:0 4px 18px rgba(42,138,138,0.45);letter-spacing:0.2px;animation:pulse-cta 2.4s ease-in-out infinite;}
+@keyframes pulse-cta{0%,100%{box-shadow:0 4px 18px rgba(42,138,138,0.45);}50%{box-shadow:0 4px 28px rgba(42,138,138,0.75);}}
 </style>
 </head>
 <body>
@@ -188,7 +190,10 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
         <div class="wf"><div class="wf-ico">⭐</div><div class="wf-txt"><h4>Organise &amp; favourite</h4><p>Browse by category, search your collection, favourite recipes, and add your own notes.</p></div></div>
       </div>
       <p class="wel-note">You'll need a free Groq API key to use AI extraction.<br>Takes about 60 seconds to set up.</p>
-      <button class="pbtn" onclick="welcomeDone()">Get Started →</button>
+      <button class="pbtn wel-cta" onclick="welcomeDone()">
+        <span>Get Started</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:8px;vertical-align:middle;"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
     </div>
   </div>
 
@@ -392,10 +397,11 @@ const FE=['🍝','🥗','🍜','🥘','🍲','🍛','🥩','🍕','🥞','🧆',
 // Safe storage — falls back to in-memory if localStorage is blocked (sandboxed iframes etc.)
 const _mem={};
 const store={
-  get(k){try{return store.get(k);}catch(e){return _mem[k]??null;}},
-  set(k,v){try{store.set(k,v);}catch(e){_mem[k]=v;}},
-  remove(k){try{store.remove(k);}catch(e){delete _mem[k];}}
+  get(k){try{return localStorage.getItem(k);}catch(e){return _mem[k]??null;}},
+  set(k,v){try{localStorage.setItem(k,v);}catch(e){_mem[k]=v;}},
+  remove(k){try{localStorage.removeItem(k);}catch(e){delete _mem[k];}}
 };
+function getCustomCats(){try{const v=store.get(CK);return v?JSON.parse(v):[];}catch(e){return[];}}
 function saveCustomCats(arr){store.set(CK,JSON.stringify(arr));}
 function allCats(){return[...CATS,...getCustomCats().filter(c=>!CATS.includes(c))];}
 function catEmoji(c){return CE[c]||'🍴';}
