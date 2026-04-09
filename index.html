@@ -412,7 +412,7 @@ function load(){
   try{const v=store.get(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
   if(!store.get(WK))go('welcome');
   else if(!getKey())go('settings');
-  else{buildChips();render();}
+  else{go('main');}
 }
 function save(){try{store.set(SK,JSON.stringify(recs));}catch(e){}}
 function welcomeDone(){store.set(WK,'1');if(!getKey())go('settings');else{buildChips();render();go('main');}}
