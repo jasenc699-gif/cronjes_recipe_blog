@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>Cronjes Recipe Blog</title>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.7.0/mammoth.browser.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#F2F5F5;--warm:#E4EDED;--h:#1A4A4A;
+  --tc:#2A8A8A;--tcl:#E0F2F2;--tcd:#1A6060;
+  --br:#3A6060;--tx:#1A2A2A;--mu:#5A7878;
+  --bd:rgba(42,138,138,0.15);--bds:rgba(42,138,138,0.28);
+  --r:14px;--safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px);
+}
+html,body{height:100%;background:#0d2a2a;}
+body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
+#app{height:100dvh;max-width:480px;margin:0 auto;overflow:hidden;display:flex;flex-direction:column;background:var(--bg);box-shadow:0 0 40px rgba(0,0,0,0.4);}
+.scr{display:none;flex-direction:column;flex:1;background:var(--bg);overflow:hidden;}
+.scr.on{display:flex;}
+.sa{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;}
+
+/* HEADER */
+.app-hdr{background:var(--h);padding:calc(12px + var(--safe-t)) 16px 12px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background-image:repeating-linear-gradient(45deg,transparent,transparent 18px,rgba(255,255,255,0.018) 18px,rgba(255,255,255,0.018) 19px);}
+.brand .name{font-size:22px;color:#E0F2F2;letter-spacing:-0.3px;}
+.brand .sub{font-size:9px;color:#5AACAC;letter-spacing:3px;text-transform:uppercase;font-family:Arial,sans-serif;margin-top:2px;}
+.hdr-btns{display:flex;gap:6px;align-items:center;}
+.icon-btn{background:none;border:none;cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;border-radius:50%;}
+.fab{background:var(--tc);border:none;border-radius:50%;width:42px;height:42px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(196,96,58,0.4);}
+
+/* SUB HEADER */
+.sub-hdr{background:var(--warm);border-bottom:1px solid var(--bd);padding:12px 16px;display:flex;align-items:center;gap:6px;flex-shrink:0;min-height:52px;}
+.sub-hdr h2{font-size:17px;font-weight:normal;flex:1;}
+.bk{background:none;border:none;color:var(--tc);font-size:28px;cursor:pointer;padding:0 8px 0 0;line-height:1;min-width:44px;min-height:44px;display:flex;align-items:center;}
+
+/* SEARCH & CHIPS */
+.srch{padding:12px 14px 6px;}
+.srch input{width:100%;background:white;border:1px solid var(--bds);border-radius:24px;padding:12px 18px;font-size:15px;font-family:Arial,sans-serif;color:var(--tx);outline:none;}
+.srch input:focus{border-color:var(--tc);}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:6px 14px 10px;scrollbar-width:none;}
+.chips::-webkit-scrollbar{display:none;}
+.chip{background:white;border:1px solid var(--bds);border-radius:24px;padding:8px 16px;font-size:13px;font-family:Arial,sans-serif;white-space:nowrap;cursor:pointer;color:var(--mu);flex-shrink:0;}
+.chip.on{background:var(--tc);border-color:var(--tc);color:white;}
+
+/* RECIPE GRID */
+.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:4px 14px 24px;}
+.rc{background:white;border-radius:var(--r);border:1px solid var(--bd);overflow:hidden;cursor:pointer;transition:transform 0.12s;position:relative;}
+.rc:active{transform:scale(0.96);}
+.rc-img{height:110px;display:flex;align-items:center;justify-content:center;font-size:38px;}
+.rc-star{position:absolute;top:7px;right:7px;background:rgba(255,255,255,0.92);border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;}
+.rc-body{padding:10px 11px 12px;}
+.rc-title{font-size:14px;line-height:1.35;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.rc-meta{font-size:11px;color:var(--mu);font-family:Arial,sans-serif;}
+.rc-cat{font-size:10px;font-family:Arial,sans-serif;background:var(--tcl);color:var(--tcd);padding:3px 8px;border-radius:20px;display:inline-block;margin-top:6px;}
+
+/* CATEGORY GRID */
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:14px;}
+.ccard{background:white;border-radius:var(--r);border:1px solid var(--bd);padding:18px 14px;cursor:pointer;text-align:center;transition:transform 0.12s;}
+.ccard:active{transform:scale(0.96);}
+.cico{font-size:28px;display:block;margin-bottom:8px;}
+.cname{font-size:14px;color:var(--tx);margin-bottom:3px;}
+.ccnt{font-size:12px;color:var(--mu);font-family:Arial,sans-serif;}
+
+/* EMPTY */
+.empty{text-align:center;padding:70px 24px;}
+.empty p{font-size:15px;line-height:1.9;color:var(--mu);font-family:Arial,sans-serif;}
+.empty .eico{font-size:50px;display:block;margin-bottom:16px;}
+
+/* BOTTOM NAV */
+#botnav{display:flex;border-top:1px solid var(--bd);background:white;flex-shrink:0;padding-bottom:var(--safe-b);}
+.ntab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 0 12px;gap:4px;cursor:pointer;border:none;background:none;color:var(--mu);font-size:11px;font-family:Arial,sans-serif;transition:color 0.12s;min-height:56px;}
+.ntab.on{color:var(--tc);}
+
+/* ADD SCREEN */
+.addopts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:16px;}
+.addopt{background:white;border:2px solid var(--bd);border-radius:14px;padding:16px 8px;text-align:center;cursor:pointer;transition:all 0.12s;min-height:82px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.addopt.on{border-color:var(--tc);background:var(--tcl);}
+.addopt .ico{font-size:26px;display:block;margin-bottom:8px;}
+.addopt .lbl{font-size:13px;font-family:Arial,sans-serif;color:var(--tx);}
+.fsec{padding:0 14px 16px;}
+.flbl{font-size:13px;color:var(--mu);font-family:Arial,sans-serif;margin-bottom:8px;display:block;}
+.finp{width:100%;background:white;border:1px solid var(--bds);border-radius:12px;padding:13px 15px;font-size:15px;font-family:Arial,sans-serif;color:var(--tx);outline:none;}
+.finp:focus{border-color:var(--tc);}
+.upz{border:2px dashed var(--bds);border-radius:14px;padding:22px 14px;text-align:center;cursor:pointer;background:white;display:flex;flex-direction:column;align-items:center;gap:8px;}
+.upz .ico{font-size:30px;}
+.upz p{font-size:13px;color:var(--mu);font-family:Arial,sans-serif;line-height:1.6;}
+.upz strong{color:var(--tc);}
+.pbtn{width:100%;background:var(--tc);color:white;border:none;border-radius:26px;padding:15px;font-size:16px;font-family:Georgia,serif;cursor:pointer;margin-top:10px;min-height:52px;}
+.pbtn:active{background:var(--tcd);}
+.pbtn.sec{background:white;color:var(--tc);border:1.5px solid var(--tc);}
+.pbtn.sec:active{background:var(--tcl);}
+.errmsg{background:#fff0f0;border:1px solid #f0b0b0;color:#a03030;padding:12px 14px;border-radius:12px;font-size:13px;font-family:Arial,sans-serif;margin-top:10px;display:none;line-height:1.6;}
+#imgprev{width:100%;border-radius:12px;margin-top:10px;display:none;max-height:180px;object-fit:cover;}
+#fip,#dip,#bkimp{display:none;}
+
+/* DETAIL */
+.dhero{min-height:150px;display:flex;align-items:center;justify-content:center;font-size:56px;background:var(--tcl);}
+.dhero img{width:100%;max-height:200px;object-fit:cover;}
+.dbody{padding:16px 16px 6px;}
+.dtitle{font-size:22px;line-height:1.25;margin-bottom:10px;}
+.drow{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.catbadge{background:var(--tcl);color:var(--tcd);font-size:12px;font-family:Arial,sans-serif;padding:5px 13px;border-radius:20px;}
+.starbtn{background:none;border:1px solid var(--bds);border-radius:24px;padding:7px 14px;font-size:13px;font-family:Arial,sans-serif;cursor:pointer;color:var(--mu);display:flex;align-items:center;gap:6px;}
+.starbtn.fav{background:#D0F0F0;border-color:#2A8A8A;color:#1A5A5A;}
+.dmeta{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px;}
+.dmi{font-size:12px;font-family:Arial,sans-serif;color:var(--mu);}
+.dmi strong{color:var(--br);display:block;font-size:14px;}
+.shd{font-size:10px;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:1.8px;color:var(--tc);margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--bd);}
+.ingl{list-style:none;}
+.ingl li{padding:10px 0;border-bottom:1px solid var(--bd);font-size:14px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;}
+.ingl li::before{content:"•";color:var(--tc);font-size:16px;line-height:1.3;flex-shrink:0;}
+.stepl{list-style:none;}
+.stepl li{padding:10px 0;border-bottom:1px solid var(--bd);font-size:14px;line-height:1.7;display:flex;gap:12px;}
+.snum{background:var(--tc);color:white;min-width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:Arial,sans-serif;flex-shrink:0;margin-top:2px;}
+.cmtsec{padding:0 16px 16px;}
+.cmtitem{background:white;border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:9px;}
+.cmttxt{font-size:14px;line-height:1.5;margin-bottom:6px;}
+.cmtdate{font-size:11px;color:var(--mu);font-family:Arial,sans-serif;}
+.cmtrow{display:flex;justify-content:space-between;align-items:center;}
+.cmtrm{background:none;border:none;color:var(--mu);font-size:11px;font-family:Arial,sans-serif;cursor:pointer;padding:4px;}
+.cmtform{display:flex;gap:8px;margin-top:12px;}
+.cmtform textarea{flex:1;border:1px solid var(--bds);border-radius:12px;padding:11px 13px;font-size:14px;font-family:Arial,sans-serif;color:var(--tx);outline:none;resize:none;height:46px;transition:height 0.2s;}
+.cmtform textarea:focus{border-color:var(--tc);height:78px;}
+.cmtsub{background:var(--tc);color:white;border:none;border-radius:24px;padding:11px 16px;font-size:13px;font-family:Arial,sans-serif;cursor:pointer;align-self:flex-end;min-height:46px;}
+.delbtn{margin:8px 16px 24px;background:none;border:1.5px solid #E0B0B0;color:#C05050;border-radius:24px;padding:13px;font-size:14px;font-family:Arial,sans-serif;cursor:pointer;width:calc(100% - 32px);display:block;min-height:50px;}
+
+/* LOADER */
+#loader{position:fixed;inset:0;background:rgba(253,246,236,0.95);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:200;gap:18px;}
+.spin{width:42px;height:42px;border:3px solid var(--bds);border-top-color:var(--tc);border-radius:50%;animation:sp 0.85s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg);}}
+#loadmsg{font-size:15px;color:var(--mu);font-family:Arial,sans-serif;}
+
+/* SETTINGS */
+.kinfo{background:#f0f7f0;border:1px solid #b0d8b0;color:#2a6a2a;padding:12px 14px;border-radius:12px;font-size:13px;font-family:Arial,sans-serif;margin-bottom:12px;display:none;}
+.settingssec{padding:16px;}
+.settingssec>p,.settingssec p{font-size:13px;color:var(--mu);font-family:Arial,sans-serif;line-height:1.7;margin-bottom:10px;}
+.settingssec a{color:var(--tc);}
+.bk-card{background:white;border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:12px;}
+.bk-card h4{font-size:15px;color:var(--tx);margin-bottom:6px;}
+
+/* WELCOME */
+#swel{background:var(--h);}
+.wel-hero{padding:calc(44px + var(--safe-t)) 28px 28px;text-align:center;flex-shrink:0;}
+.wel-logo{font-size:60px;margin-bottom:14px;}
+.wel-title{font-size:32px;color:#F5DEC8;letter-spacing:-0.5px;margin-bottom:6px;}
+.wel-sub{font-size:10px;color:#5AACAC;letter-spacing:3px;text-transform:uppercase;font-family:Arial,sans-serif;}
+.wel-body{background:var(--bg);border-radius:28px 28px 0 0;padding:26px 20px calc(28px + var(--safe-b));overflow-y:auto;flex:1;}
+.wel-body h3{font-size:18px;color:var(--tx);margin-bottom:18px;text-align:center;}
+.wel-feat{display:flex;flex-direction:column;gap:12px;margin-bottom:24px;}
+.wf{display:flex;align-items:flex-start;gap:14px;background:white;border-radius:14px;padding:14px;border:1px solid var(--bd);}
+.wf-ico{font-size:26px;flex-shrink:0;margin-top:1px;}
+.wf-txt h4{font-size:14px;color:var(--tx);margin-bottom:3px;}
+.wf-txt p{font-size:12px;color:var(--mu);font-family:Arial,sans-serif;line-height:1.6;}
+.wel-note{font-size:12px;color:var(--mu);font-family:Arial,sans-serif;text-align:center;margin-bottom:14px;line-height:1.7;}
+</style>
+</head>
+<body>
+
+<div id="loader"><div class="spin"></div><p id="loadmsg">Extracting recipe...</p></div>
+
+<div id="app">
+
+  <!-- WELCOME -->
+  <div id="swel" class="scr">
+    <div class="wel-hero">
+      <div class="wel-logo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="90" height="90">
+          <circle cx="100" cy="100" r="100" fill="#2A8A8A"/>
+          <circle cx="100" cy="100" r="72" fill="none" stroke="#5AACAC" stroke-width="3"/>
+          <circle cx="100" cy="100" r="60" fill="#1A6060"/>
+          <g transform="translate(68,44)"><rect x="4" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="10" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="16" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="5" y="22" width="13" height="3" rx="1.5" fill="#E0F2F2"/><rect x="10" y="25" width="3" height="68" rx="1.5" fill="#E0F2F2"/></g>
+          <g transform="translate(120,44)"><ellipse cx="11" cy="13" rx="9" ry="12" fill="#5AACAC"/><ellipse cx="11" cy="12" rx="6" ry="8" fill="#2A8A8A"/><rect x="9" y="24" width="4" height="68" rx="2" fill="#5AACAC"/></g>
+          <text x="100" y="116" text-anchor="middle" font-family="Georgia,serif" font-size="48" font-weight="bold" fill="#E0F2F2" letter-spacing="-1">C</text>
+          <text x="100" y="162" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#A0D8D8" letter-spacing="4">CRONJES</text>
+        </svg>
+      </div>
+      <div class="wel-title">Cronjes</div>
+      <div class="wel-sub">Recipe Blog</div>
+    </div>
+    <div class="wel-body">
+      <h3>Your personal recipe collection</h3>
+      <div class="wel-feat">
+        <div class="wf"><div class="wf-ico">📷</div><div class="wf-txt"><h4>Screenshot a recipe</h4><p>Snap a photo of any recipe from a book, magazine, or screen and AI extracts it instantly.</p></div></div>
+        <div class="wf"><div class="wf-ico">🔗</div><div class="wf-txt"><h4>Import from a website</h4><p>Paste any recipe URL and the app fetches and structures it for you automatically.</p></div></div>
+        <div class="wf"><div class="wf-ico">📄</div><div class="wf-txt"><h4>Upload a Word document</h4><p>Have recipes in .docx files? Upload them and AI pulls out all the details.</p></div></div>
+        <div class="wf"><div class="wf-ico">⭐</div><div class="wf-txt"><h4>Organise &amp; favourite</h4><p>Browse by category, search your collection, favourite recipes, and add your own notes.</p></div></div>
+      </div>
+      <p class="wel-note">You'll need a free Groq API key to use AI extraction.<br>Takes about 60 seconds to set up.</p>
+      <button class="pbtn" onclick="welcomeDone()">Get Started →</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="sm" class="scr">
+    <header class="app-hdr">
+      <div class="brand" style="display:flex;align-items:center;gap:10px;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="36" height="36" style="flex-shrink:0;">
+          <circle cx="100" cy="100" r="100" fill="#2A8A8A"/>
+          <circle cx="100" cy="100" r="72" fill="none" stroke="#5AACAC" stroke-width="4"/>
+          <circle cx="100" cy="100" r="60" fill="#1A6060"/>
+          <g transform="translate(68,44)"><rect x="4" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="10" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="16" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="5" y="22" width="13" height="3" rx="1.5" fill="#E0F2F2"/><rect x="10" y="25" width="3" height="68" rx="1.5" fill="#E0F2F2"/></g>
+          <g transform="translate(120,44)"><ellipse cx="11" cy="13" rx="9" ry="12" fill="#5AACAC"/><ellipse cx="11" cy="12" rx="6" ry="8" fill="#2A8A8A"/><rect x="9" y="24" width="4" height="68" rx="2" fill="#5AACAC"/></g>
+          <text x="100" y="116" text-anchor="middle" font-family="Georgia,serif" font-size="48" font-weight="bold" fill="#E0F2F2">C</text>
+        </svg>
+        <div><div class="name">Cronjes</div><div class="sub">Recipe Blog</div></div>
+      </div>
+      <div class="hdr-btns">
+        <button class="icon-btn" onclick="go('settings')" title="Settings">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F5DEC8" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="fab" onclick="go('add')" title="Add recipe">
+          <svg width="16" height="16" viewBox="0 0 15 15" fill="none" stroke="white" stroke-width="2.5"><path d="M7.5 1v13M1 7.5h13"/></svg>
+        </button>
+      </div>
+    </header>
+    <div class="sa">
+      <div class="srch"><input id="srch" type="text" placeholder="Search recipes..." oninput="render()"/></div>
+      <div id="chipwrap" class="chips"></div>
+      <div id="pall" class="rgrid"></div>
+      <div id="pfav" class="rgrid" style="display:none"></div>
+      <div id="pcat" class="cgrid" style="display:none"></div>
+      <div id="pempty" class="empty" style="display:none"><span class="eico">🍽️</span><p id="emptymsg">No recipes yet.<br>Tap + to add your first one!</p></div>
+    </div>
+    <nav id="botnav">
+      <button class="ntab on" id="nt-a" onclick="setTab('a')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="6" height="6" rx="1.5"/><rect x="12" y="2" width="6" height="6" rx="1.5"/><rect x="2" y="12" width="6" height="6" rx="1.5"/><rect x="12" y="12" width="6" height="6" rx="1.5"/></svg>
+        All
+      </button>
+      <button class="ntab" id="nt-f" onclick="setTab('f')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        Favourites
+      </button>
+      <button class="ntab" id="nt-c" onclick="setTab('c')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>
+        Categories
+      </button>
+    </nav>
+  </div>
+
+  <!-- ADD -->
+  <div id="sadd" class="scr">
+    <div class="sub-hdr"><button class="bk" onclick="go('main')">‹</button><h2>Add a Recipe</h2></div>
+    <div class="sa" style="padding-bottom:24px;">
+      <div class="addopts">
+        <div class="addopt on" id="op-p" onclick="selMode('p')"><span class="ico">📷</span><div class="lbl">Screenshot</div></div>
+        <div class="addopt" id="op-u" onclick="selMode('u')"><span class="ico">🔗</span><div class="lbl">Website URL</div></div>
+        <div class="addopt" id="op-d" onclick="selMode('d')"><span class="ico">📄</span><div class="lbl">Word Doc</div></div>
+      </div>
+      <div id="sec-p" class="fsec">
+        <label class="flbl">Recipe photo or screenshot</label>
+        <div class="upz" onclick="document.getElementById('fip').click()"><span class="ico">📸</span><p><strong>Tap to choose image</strong><br>From gallery or camera</p></div>
+        <input type="file" id="fip" accept="image/*" onchange="onImg(event)"/>
+        <img id="imgprev" alt="preview"/>
+      </div>
+      <div id="sec-u" class="fsec" style="display:none">
+        <label class="flbl">Recipe website URL</label>
+        <input type="url" class="finp" id="urlinp" placeholder="https://www.example.com/recipe"/>
+      </div>
+      <div id="sec-d" class="fsec" style="display:none">
+        <label class="flbl">Word document (.docx)</label>
+        <div class="upz" onclick="document.getElementById('dip').click()"><span class="ico">📄</span><p><strong>Tap to choose .docx file</strong><br>Select your Word recipe document</p></div>
+        <input type="file" id="dip" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onchange="onDoc(event)"/>
+        <div id="docname" style="margin-top:10px;font-size:13px;font-family:Arial,sans-serif;color:var(--tc);display:none;"></div>
+      </div>
+      <div style="padding:0 14px;">
+        <div class="errmsg" id="errmsg"></div>
+        <button class="pbtn" id="extractbtn" onclick="doExtract()">Extract Recipe with AI</button>
+      </div>
+      <div id="catpanel" style="display:none;padding:16px 14px 0;">
+        <div class="shd" style="margin-top:0;">Recipe Extracted ✓</div>
+        <p id="catpreview" style="font-size:15px;font-weight:bold;margin:8px 0 14px;color:var(--tx);"></p>
+        <label class="flbl">Confirm Category</label>
+        <select class="finp" id="catsel" style="appearance:auto;"></select>
+        <button class="pbtn" style="margin-top:12px;" onclick="confirmSave()">Save Recipe</button>
+        <button class="pbtn sec" style="margin-top:8px;" onclick="resetAdd()">Start Over</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DETAIL -->
+  <div id="sdet" class="scr">
+    <div class="sub-hdr">
+      <button class="bk" onclick="go('main')">‹</button>
+      <h2 id="dnav" style="font-size:14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></h2>
+      <button id="starbtn" onclick="togFav()" style="background:none;border:none;cursor:pointer;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:flex-end;padding:0 0 0 8px;">
+        <svg id="starsvg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4A9090" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      </button>
+    </div>
+    <div class="sa">
+      <div id="dhero" class="dhero">🍴</div>
+      <div class="dbody">
+        <div class="dtitle" id="dtitle"></div>
+        <div class="drow">
+          <span class="catbadge" id="dcatb" onclick="openCatEdit()" title="Tap to change category" style="cursor:pointer;">
+            <span id="dcatb-txt"></span> ✎
+          </span>
+          <select id="dcatsel" class="finp" style="display:none;width:auto;padding:5px 10px;font-size:13px;margin:0;" onchange="saveCatEdit()"></select>
+          <button id="dstarbtn" onclick="togFav()" class="starbtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <span id="dstarlbl">Add to Favourites</span>
+          </button>
+        </div>
+        <div class="dmeta" id="dmeta"></div>
+        <div class="shd">Ingredients</div>
+        <ul class="ingl" id="dings"></ul>
+        <div class="shd">Instructions</div>
+        <ol class="stepl" id="dsteps"></ol>
+        <div id="dnoteswrap" style="display:none"><div class="shd">Notes</div><p id="dnotes" style="font-size:14px;line-height:1.8;color:var(--mu);padding-bottom:4px;"></p></div>
+      </div>
+      <div class="cmtsec">
+        <div class="shd">Notes &amp; Comments</div>
+        <div id="cmtlist"></div>
+        <div class="cmtform">
+          <textarea id="cmtinp" placeholder="Add a note or comment..."></textarea>
+          <button class="cmtsub" onclick="postCmt()">Post</button>
+        </div>
+      </div>
+      <button class="delbtn" onclick="delRecipe()">Delete Recipe</button>
+      <div style="height:16px;"></div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="sset" class="scr">
+    <div class="sub-hdr"><button class="bk" onclick="go('main')">‹</button><h2>Settings</h2></div>
+    <div class="sa" style="padding-bottom:24px;">
+      <div class="settingssec">
+
+        <div class="shd">Groq API Key (Free)</div>
+        <p>Completely free, no credit card needed. Sign up at <a href="https://console.groq.com" target="_blank">console.groq.com</a> → API Keys → Create API Key. Your key starts with <strong>gsk_</strong> and is stored on this device only.</p>
+        <div class="kinfo" id="kinfo">✓ Groq API key saved on this device</div>
+        <label class="flbl">Paste your Groq API key</label>
+        <input class="finp" type="password" id="keyinp" placeholder="gsk_..." autocomplete="off"/>
+        <button class="pbtn" style="margin-top:12px;" onclick="saveKey()">Save Key to Device</button>
+        <button class="delbtn" style="margin-top:10px;" onclick="testKey()">Test Connection &amp; List Models</button>
+        <div id="modelout" style="margin-top:10px;background:#f5f5f0;border:1px solid var(--bd);border-radius:12px;padding:12px 14px;font-size:12px;font-family:monospace;color:var(--tx);display:none;white-space:pre-wrap;word-break:break-all;max-height:180px;overflow-y:auto;"></div>
+        <button class="delbtn" style="margin-top:10px;" onclick="clearKey()">Remove Saved Key</button>
+
+        <div class="shd" style="margin-top:24px;">Categories</div>
+        <div class="bk-card">
+          <h4>🏷️ Manage Categories</h4>
+          <p>Add your own categories. Default ones can't be removed, but your custom ones can.</p>
+          <div id="catlist" style="margin-bottom:12px;"></div>
+          <div style="display:flex;gap:8px;">
+            <input class="finp" type="text" id="newcatinp" placeholder="e.g. BBQ, Pasta, Keto..." style="flex:1;margin-top:0;" maxlength="30"/>
+            <button class="pbtn" onclick="addCustomCat()" style="width:auto;padding:13px 18px;margin-top:0;flex-shrink:0;">Add</button>
+          </div>
+        </div>
+
+        <div class="shd" style="margin-top:24px;">Cloud Sync</div>
+        <div class="bk-card">
+          <h4>☁️ Sync Between Devices</h4>
+          <p>Uses <strong>JSONBin.io</strong> (free). Sign up at <a href="https://jsonbin.io" target="_blank">jsonbin.io</a> → grab your <strong>Master Key</strong> from the API Keys page. On the first device tap <em>Create New Bin</em> — then copy the Bin ID to your second device and tap <em>Sync Now</em> on both.</p>
+          <div class="kinfo" id="syncinfo" style="margin-bottom:10px;"></div>
+          <label class="flbl" style="margin-top:6px;">JSONBin Master Key</label>
+          <input class="finp" type="password" id="jbkey" placeholder="$2a$10$..." autocomplete="off" style="margin-bottom:10px;"/>
+          <label class="flbl">Bin ID <span style="font-weight:normal;color:var(--mu);">(leave blank on first device)</span></label>
+          <input class="finp" type="text" id="jbbin" placeholder="Will be created automatically" autocomplete="off" style="margin-bottom:12px;"/>
+          <button class="pbtn" onclick="syncNow()">☁️ Sync Now</button>
+          <div id="syncresult" style="margin-top:10px;font-size:13px;font-family:Arial,sans-serif;display:none;line-height:1.6;"></div>
+        </div>
+
+        <div class="shd" style="margin-top:24px;">Backup &amp; Restore</div>
+        <div class="bk-card">
+          <h4>📤 Export Recipes</h4>
+          <p>Download all your recipes as a JSON file. Save it somewhere safe as a backup.</p>
+          <button class="pbtn" onclick="exportBackup()">Export All Recipes</button>
+        </div>
+        <div class="bk-card">
+          <h4>📥 Import Recipes</h4>
+          <p>Restore from a previously exported backup. New recipes will be added — existing ones won't be duplicated.</p>
+          <input type="file" id="bkimp" accept=".json,application/json" onchange="importBackup(event)"/>
+          <button class="pbtn sec" onclick="document.getElementById('bkimp').click()">Choose Backup File</button>
+          <div id="impresult" style="margin-top:12px;font-size:13px;font-family:Arial,sans-serif;color:var(--tc);display:none;line-height:1.6;"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+const SK='cronjes_blog_v1',KK='cronjes_apikey',WK='cronjes_welcomed',JBK='cronjes_jbkey',JBB='cronjes_jbbin',CK='cronjes_customcats';
+const CATS=['Breakfast','Lunch','Dinner','Dessert','Snacks','Soups','Salads','Baking','Drinks','Other'];
+const CE={Breakfast:'🍳',Lunch:'🥙',Dinner:'🍽️',Dessert:'🍰',Snacks:'🧀',Soups:'🍲',Salads:'🥗',Baking:'🥐',Drinks:'🥤',Other:'🍴'};
+const CC={Breakfast:'#FFF0D0',Lunch:'#E2F2E0',Dinner:'#D5E8F5',Dessert:'#FFD6E8',Snacks:'#FFFAC0',Soups:'#FFE4C8',Salads:'#DCF2CC',Baking:'#F5E8D0',Drinks:'#CCE8F8',Other:'#E8E4DC'};
+const CUSTOMCC='#E0EEF0';
+const FE=['🍝','🥗','🍜','🥘','🍲','🍛','🥩','🍕','🥞','🧆','🍗','🥕','🥧','🍱','🫔','🫕'];
+
+function getCustomCats(){try{return JSON.parse(localStorage.getItem(CK)||'[]');}catch(e){return[];}}
+function saveCustomCats(arr){localStorage.setItem(CK,JSON.stringify(arr));}
+function allCats(){return[...CATS,...getCustomCats().filter(c=>!CATS.includes(c))];}
+function catEmoji(c){return CE[c]||'🍴';}
+function catColor(c){return CC[c]||CUSTOMCC;}
+let recs=[],tab='a',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null;
+
+function load(){
+  try{const v=localStorage.getItem(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
+  if(!localStorage.getItem(WK))go('welcome');
+  else if(!getKey())go('settings');
+  else{buildChips();render();}
+}
+function save(){try{localStorage.setItem(SK,JSON.stringify(recs));}catch(e){}}
+function welcomeDone(){localStorage.setItem(WK,'1');if(!getKey())go('settings');else{buildChips();render();go('main');}}
+
+function getKey(){return localStorage.getItem(KK)||'';}
+function saveKey(){
+  const v=document.getElementById('keyinp').value.trim();
+  if(!v.startsWith('gsk_')){alert('That doesn\'t look like a valid Groq key. It should start with gsk_');return;}
+  localStorage.setItem(KK,v);
+  document.getElementById('keyinp').value='';
+  showKinfo();alert('API key saved ✓');buildChips();render();go('main');
+}
+function clearKey(){if(!confirm('Remove saved API key?'))return;localStorage.removeItem(KK);document.getElementById('kinfo').style.display='none';}
+function showKinfo(){document.getElementById('kinfo').style.display=getKey()?'block':'none';}
+
+function go(s){
+  document.querySelectorAll('.scr').forEach(x=>x.classList.remove('on'));
+  ({main:'sm',add:'sadd',detail:'sdet',settings:'sset',welcome:'swel'})[s];
+  document.getElementById({main:'sm',add:'sadd',detail:'sdet',settings:'sset',welcome:'swel'}[s]).classList.add('on');
+  if(s==='add')resetAdd();
+  if(s==='main'){buildChips();render();}
+  if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();}
+}
+
+function setTab(t){
+  tab=t;catF='All';
+  ['a','f','c'].forEach(x=>document.getElementById('nt-'+x).classList.toggle('on',x===t));
+  document.getElementById('pall').style.display=t==='a'?'grid':'none';
+  document.getElementById('pfav').style.display=t==='f'?'grid':'none';
+  document.getElementById('pcat').style.display=t==='c'?'grid':'none';
+  document.querySelector('.srch').style.display=t==='c'?'none':'block';
+  if(t==='c')renderCats();else render();
+}
+
+function buildChips(){
+  const used=[...new Set(recs.map(r=>r.category).filter(Boolean))];
+  document.getElementById('chipwrap').innerHTML='<span class="chip on" onclick="filterCat(\'All\',this)">All</span>'
+    +used.map(c=>`<span class="chip" onclick="filterCat('${c}',this)">${catEmoji(c)} ${c}</span>`).join('');
+}
+function filterCat(c,el){catF=c;document.querySelectorAll('#chipwrap .chip').forEach(x=>x.classList.remove('on'));el.classList.add('on');render();}
+
+function render(){
+  const q=(document.getElementById('srch').value||'').toLowerCase();
+  let list=recs;
+  if(catF&&catF!=='All')list=list.filter(r=>r.category===catF);
+  if(q)list=list.filter(r=>r.title.toLowerCase().includes(q)||(r.cuisine||'').toLowerCase().includes(q));
+  if(tab==='f')list=list.filter(r=>r.favourite);
+  const pid=tab==='f'?'pfav':'pall';
+  const p=document.getElementById(pid);p.innerHTML='';
+  const empty=document.getElementById('pempty');
+  if(!list.length){empty.style.display='block';document.getElementById('emptymsg').innerHTML=tab==='f'?'No favourites yet.<br>Tap ★ on a recipe to save it!':'No recipes yet.<br>Tap + to add your first one!';}
+  else empty.style.display='none';
+  list.forEach(r=>{
+    const card=document.createElement('div');card.className='rc';card.onclick=()=>showDetail(r.id);
+    const bg=catColor(r.category);
+    const img=r.imageData?`<div class="rc-img" style="padding:0;overflow:hidden"><img src="${r.imageData}" style="width:100%;height:110px;object-fit:cover;display:block"/></div>`:`<div class="rc-img" style="background:${bg}">${r.emoji}</div>`;
+    card.innerHTML=`${img}${r.favourite?'<div class="rc-star">⭐</div>':''}<div class="rc-body"><div class="rc-title">${r.title}</div><div class="rc-meta">${[r.time,r.servings].filter(Boolean).join(' · ')}</div>${r.category?`<span class="rc-cat">${r.category}</span>`:''}</div>`;
+    p.appendChild(card);
+  });
+}
+
+function renderCats(){
+  const p=document.getElementById('pcat');p.innerHTML='';
+  allCats().forEach(c=>{
+    const n=recs.filter(r=>r.category===c).length;
+    const d=document.createElement('div');d.className='ccard';
+    d.onclick=()=>{catF=c;setTab('a');buildChips();};
+    d.innerHTML=`<span class="cico">${catEmoji(c)}</span><div class="cname">${c}</div><div class="ccnt">${n} recipe${n!==1?'s':''}</div>`;
+    p.appendChild(d);
+  });
+}
+
+function showDetail(id){
+  rid=id;const r=recs.find(x=>x.id===id);if(!r)return;
+  go('detail');
+  document.getElementById('dnav').textContent=r.title;
+  document.getElementById('dtitle').textContent=r.title;
+  const h=document.getElementById('dhero');
+  if(r.imageData){h.innerHTML=`<img src="${r.imageData}"/>`;h.style.minHeight='';}
+  else{h.innerHTML=r.emoji;h.style.minHeight='150px';h.style.background=catColor(r.category);}
+  document.getElementById('dcatb-txt').textContent=(r.category||'Other');
+  document.getElementById('dcatb').style.display='';
+  document.getElementById('dcatsel').style.display='none';
+  document.getElementById('dmeta').innerHTML=[r.servings&&{l:r.servings,k:'Servings'},r.time&&{l:r.time,k:'Time'},r.cuisine&&{l:r.cuisine,k:'Cuisine'}].filter(Boolean).map(m=>`<div class="dmi"><strong>${m.l}</strong>${m.k}</div>`).join('');
+  document.getElementById('dings').innerHTML=(r.ingredients||[]).map(i=>`<li>${i}</li>`).join('');
+  document.getElementById('dsteps').innerHTML=(r.steps||[]).map((s,i)=>`<li><div class="snum">${i+1}</div><div>${s}</div></li>`).join('');
+  if(r.notes){document.getElementById('dnotes').textContent=r.notes;document.getElementById('dnoteswrap').style.display='block';}
+  else document.getElementById('dnoteswrap').style.display='none';
+  updStar(r.favourite);renderCmts(r);
+  document.querySelector('#sdet .sa').scrollTop=0;
+}
+function updStar(fav){
+  const sv=document.getElementById('starsvg');sv.setAttribute('fill',fav?'#2ABBBB':'none');sv.setAttribute('stroke',fav?'#1A8080':'#4A9090');
+  const db=document.getElementById('dstarbtn');db.classList.toggle('fav',fav);
+  document.getElementById('dstarlbl').textContent=fav?'Favourited':'Add to Favourites';
+  db.querySelector('svg').setAttribute('fill',fav?'#1A8080':'none');
+}
+function openCatEdit(){
+  const r=recs.find(x=>x.id===rid);if(!r)return;
+  const sel=document.getElementById('dcatsel');
+  sel.innerHTML=allCats().map(c=>`<option value="${c}"${c===r.category?' selected':''}>${catEmoji(c)} ${c}</option>`).join('');
+  document.getElementById('dcatb').style.display='none';
+  sel.style.display='';sel.focus();
+}
+function saveCatEdit(){
+  const r=recs.find(x=>x.id===rid);if(!r)return;
+  const sel=document.getElementById('dcatsel');
+  r.category=sel.value;save();
+  document.getElementById('dcatb-txt').textContent=r.category;
+  document.getElementById('dcatb').style.display='';
+  sel.style.display='none';
+  buildChips();
+}const r=recs.find(x=>x.id===rid);if(!r)return;r.favourite=!r.favourite;updStar(r.favourite);save();}
+function renderCmts(r){
+  const cmts=r.comments||[];
+  document.getElementById('cmtlist').innerHTML=cmts.length?cmts.map(c=>`<div class="cmtitem"><div class="cmttxt">${c.text}</div><div class="cmtrow"><div class="cmtdate">${fmtDate(c.date)}</div><button class="cmtrm" onclick="delCmt('${c.id}')">Remove</button></div></div>`).join(''):`<p style="font-size:13px;color:var(--mu);font-family:Arial,sans-serif;margin-bottom:10px;">No notes yet.</p>`;
+}
+function postCmt(){const el=document.getElementById('cmtinp');const tx=el.value.trim();if(!tx)return;const r=recs.find(x=>x.id===rid);if(!r)return;if(!r.comments)r.comments=[];r.comments.push({id:Date.now().toString(),text:tx,date:new Date().toISOString()});el.value='';renderCmts(r);save();}
+function delCmt(cid){const r=recs.find(x=>x.id===rid);if(!r)return;r.comments=(r.comments||[]).filter(c=>c.id!==cid);renderCmts(r);save();}
+function fmtDate(iso){const d=new Date(iso);return d.toLocaleDateString('en-NZ',{day:'numeric',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-NZ',{hour:'2-digit',minute:'2-digit'});}
+async function delRecipe(){if(!confirm('Delete this recipe?'))return;recs=recs.filter(r=>r.id!==rid);save();go('main');}
+
+function resetAdd(){
+  mode='p';fb64=null;dtxt=null;pendingRec=null;
+  ['fip','dip'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('imgprev').style.display='none';
+  document.getElementById('urlinp').value='';
+  document.getElementById('docname').style.display='none';
+  document.getElementById('errmsg').style.display='none';
+  document.getElementById('catpanel').style.display='none';
+  document.getElementById('extractbtn').style.display='block';
+  selMode('p');
+}
+function selMode(m){
+  mode=m;
+  ['p','u','d'].forEach(x=>{document.getElementById('op-'+x).classList.toggle('on',x===m);document.getElementById('sec-'+x).style.display=x===m?'block':'none';});
+}
+function onImg(e){
+  const f=e.target.files[0];if(!f)return;
+  if(f.size>5242880){showErr('Image too large (max 5MB).');return;}
+  const rd=new FileReader();rd.onload=ev=>{fb64=ev.target.result;const im=document.getElementById('imgprev');im.src=fb64;im.style.display='block';};rd.readAsDataURL(f);
+}
+async function onDoc(e){
+  const f=e.target.files[0];if(!f)return;
+  if(typeof mammoth==='undefined'){showErr('Document reader still loading. Try again.');return;}
+  try{const buf=await f.arrayBuffer();const res=await mammoth.extractRawText({arrayBuffer:buf});dtxt=res.value.replace(/\n{3,}/g,'\n\n').trim();const dn=document.getElementById('docname');dn.textContent='✓ '+f.name;dn.style.display='block';}
+  catch(er){showErr('Could not read this Word document.');}
+}
+
+// CATEGORY MANAGER
+function renderCatManager(){
+  const custom=getCustomCats();
+  const el=document.getElementById('catlist');
+  if(!el)return;
+  const all=[...CATS.map(c=>({c,custom:false})),...custom.map(c=>({c,custom:true}))];
+  el.innerHTML=all.map(({c,custom})=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd);">
+      <span style="font-size:14px;">${catEmoji(c)} ${c}</span>
+      ${custom
+        ?`<button onclick="deleteCustomCat('${c}')" style="background:none;border:1px solid #E0B0B0;color:#C05050;border-radius:20px;padding:4px 12px;font-size:12px;font-family:Arial,sans-serif;cursor:pointer;">Remove</button>`
+        :`<span style="font-size:11px;font-family:Arial,sans-serif;color:var(--mu);">Default</span>`}
+    </div>`).join('');
+}
+
+function addCustomCat(){
+  const inp=document.getElementById('newcatinp');
+  const val=inp.value.trim();
+  if(!val){inp.focus();return;}
+  if(val.length>30){alert('Category name too long (max 30 characters).');return;}
+  const custom=getCustomCats();
+  const combined=[...CATS,...custom].map(c=>c.toLowerCase());
+  if(combined.includes(val.toLowerCase())){alert('"'+val+'" already exists.');inp.value='';return;}
+  custom.push(val);
+  saveCustomCats(custom);
+  inp.value='';
+  renderCatManager();
+  buildChips();
+}
+
+function deleteCustomCat(c){
+  if(!confirm('Remove "'+c+'" category? Recipes in this category will be moved to Other.'))return;
+  const custom=getCustomCats().filter(x=>x!==c);
+  saveCustomCats(custom);
+  recs=recs.map(r=>r.category===c?{...r,category:'Other'}:r);
+  save();renderCatManager();buildChips();render();
+}
+
+function loadSyncFields(){
+  const k=localStorage.getItem(JBK)||'';
+  const b=localStorage.getItem(JBB)||'';
+  document.getElementById('jbkey').value=''; // keep password hidden
+  document.getElementById('jbbin').value=b;
+  const si=document.getElementById('syncinfo');
+  const last=localStorage.getItem('cronjes_lastsync');
+  if(b){si.textContent='Bin ID: '+b+(last?' · Last synced: '+new Date(last).toLocaleString('en-NZ',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'');si.style.display='block';}
+  else{si.style.display='none';}
+}
+
+function saveSyncCreds(){
+  const k=document.getElementById('jbkey').value.trim();
+  const b=document.getElementById('jbbin').value.trim();
+  if(k)localStorage.setItem(JBK,k);
+  if(b)localStorage.setItem(JBB,b);
+}
+
+function setSyncResult(msg,ok){
+  const el=document.getElementById('syncresult');
+  el.textContent=msg;el.style.color=ok?'var(--tc)':'#a03030';el.style.display='block';
+}
+
+function mergeRecipes(local,remote){
+  // Merge by ID, keeping most recently saved version on conflict
+  const map=new Map();
+  [...remote,...local].forEach(r=>{
+    if(!r||!r.id)return;
+    const existing=map.get(r.id);
+    if(!existing||(r.savedAt&&(!existing.savedAt||r.savedAt>existing.savedAt)))map.set(r.id,r);
+  });
+  return [...map.values()].sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
+}
+
+async function syncNow(){
+  saveSyncCreds();
+  const key=localStorage.getItem(JBK)||document.getElementById('jbkey').value.trim();
+  let binId=localStorage.getItem(JBB)||document.getElementById('jbbin').value.trim();
+  if(!key){setSyncResult('Please enter your JSONBin Master Key first.',false);return;}
+  setSyncResult('Syncing…',true);
+  try{
+    if(!binId){
+      // Create a new bin
+      const cr=await fetch('https://api.jsonbin.io/v3/b',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-Master-Key':key,'X-Bin-Name':'Cronjes Recipes','X-Bin-Private':'true'},
+        body:JSON.stringify({recipes:recs,syncedAt:new Date().toISOString()})
+      });
+      const cd=await cr.json();
+      if(cd.message&&!cd.metadata)throw new Error(cd.message);
+      binId=cd.metadata.id;
+      localStorage.setItem(JBB,binId);
+      document.getElementById('jbbin').value=binId;
+      localStorage.setItem('cronjes_lastsync',new Date().toISOString());
+      loadSyncFields();
+      setSyncResult(`✓ New bin created!\n\nBin ID: ${binId}\n\nCopy this ID to your other device, paste it into the Bin ID field there, and tap Sync Now.`,true);
+      return;
+    }
+    // Read remote
+    const gr=await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`,{headers:{'X-Master-Key':key}});
+    const gd=await gr.json();
+    if(gd.message&&!gd.record)throw new Error(gd.message);
+    const remote=gd.record?.recipes||[];
+    // Merge
+    const merged=mergeRecipes(recs,remote);
+    // Push merged back
+    const pr=await fetch(`https://api.jsonbin.io/v3/b/${binId}`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json','X-Master-Key':key},
+      body:JSON.stringify({recipes:merged,syncedAt:new Date().toISOString()})
+    });
+    const pd=await pr.json();
+    if(pd.message&&!pd.record)throw new Error(pd.message);
+    const added=merged.length-recs.length;
+    recs=merged;save();buildChips();render();
+    localStorage.setItem('cronjes_lastsync',new Date().toISOString());
+    loadSyncFields();
+    setSyncResult(`✓ Synced! ${merged.length} recipes in collection.${added>0?' '+added+' new recipe'+(added!==1?'s':'')+ ' pulled from cloud.':''}`,true);
+  }catch(e){setSyncResult('Sync failed: '+(e.message||e),false);}
+}
+
+// BACKUP
+function exportBackup(){
+  if(!recs.length){alert('No recipes to export yet.');return;}
+  const blob=new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),recipes:recs},null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cronjes_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);
+}
+async function importBackup(e){
+  const f=e.target.files[0];if(!f)return;
+  const res=document.getElementById('impresult');
+  try{
+    const data=JSON.parse(await f.text());
+    const incoming=Array.isArray(data)?data:(data.recipes||[]);
+    if(!incoming.length){res.textContent='No recipes found in this file.';res.style.display='block';return;}
+    const ids=new Set(recs.map(r=>r.id));
+    const newOnes=incoming.filter(r=>r.id&&!ids.has(r.id));
+    recs=recs.concat(newOnes);save();buildChips();render();
+    res.textContent=`✓ Imported ${newOnes.length} new recipe${newOnes.length!==1?'s':''} (${incoming.length-newOnes.length} skipped as duplicates).`;
+    res.style.color='var(--tc)';res.style.display='block';
+  }catch(err){res.textContent='Could not read file. Make sure it\'s a valid Cronjes backup.';res.style.color='#a03030';res.style.display='block';}
+  e.target.value='';
+}
+
+// AI
+function showLoad(m){document.getElementById('loader').style.display='flex';document.getElementById('loadmsg').textContent=m;}
+function hideLoad(){document.getElementById('loader').style.display='none';}
+function showErr(m){const e=document.getElementById('errmsg');e.textContent=m;e.style.display='block';}
+
+const PROMPT=`Extract the recipe from the provided content and return ONLY valid JSON with no markdown, no backticks, no extra text:
+{"title":"Recipe Name","servings":"4 servings","time":"30 mins","cuisine":"Italian","category":"Dinner","ingredients":["200g pasta","2 eggs","50g cheese"],"steps":["Boil pasta in salted water for 10 minutes.","Whisk eggs with cheese."],"notes":"Optional tips here"}
+category should be the best match from: ${()=>allCats().join(', ')} — or choose the closest fit. If truly unknown use "Other".
+ingredients and steps must be arrays of strings. If a value is unknown use null.`;
+
+async function callGroq(parts){
+  const key=getKey();if(!key)throw new Error('No API key. Tap ⚙️ Settings.');
+  const content=parts.map(p=>p.text?{type:'text',text:p.text}:p.inline_data?{type:'image_url',image_url:{url:`data:${p.inline_data.mime_type};base64,${p.inline_data.data}`}}:null).filter(Boolean);
+  const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:'meta-llama/llama-4-scout-17b-16e-instruct',max_tokens:1200,temperature:0.1,messages:[{role:'user',content}]})});
+  const d=await res.json();if(d.error)throw new Error(d.error.message||'Groq error');
+  return d.choices?.[0]?.message?.content||'';
+}
+
+async function testKey(){
+  const key=getKey();const out=document.getElementById('modelout');
+  if(!key){out.textContent='No key saved yet.';out.style.display='block';return;}
+  out.textContent='Checking...';out.style.display='block';
+  try{const res=await fetch('https://api.groq.com/openai/v1/models',{headers:{'Authorization':'Bearer '+key}});const d=await res.json();
+    if(d.error){out.textContent='Error: '+d.error.message;return;}
+    out.textContent='✓ Connected!\n\nAvailable models:\n\n'+(d.data||[]).map(m=>m.id).join('\n');
+  }catch(e){out.textContent='Failed: '+e.message;}
+}
+
+async function doExtract(){
+  document.getElementById('errmsg').style.display='none';
+  if(mode==='p'){if(!fb64){showErr('Please select an image first.');return;}showLoad('Reading your screenshot...');await extImg();}
+  else if(mode==='u'){const u=document.getElementById('urlinp').value.trim();if(!u||!u.startsWith('http')){showErr('Please enter a valid URL starting with https://');return;}showLoad('Fetching recipe from website...');await extUrl(u);}
+  else{if(!dtxt){showErr('Please select a Word document first.');return;}showLoad('Reading your Word document...');await extDoc();}
+}
+async function extImg(){
+  try{const[hd,b64]=fb64.split(',');const mime=hd.match(/:(.*?);/)[1];proc(await callGroq([{inline_data:{mime_type:mime,data:b64}},{text:PROMPT}]),fb64);}
+  catch(e){hideLoad();showErr('Could not read image. ('+(e.message||e)+')');}
+}
+async function fetchViaProxy(u){
+  const proxies=[()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`),()=>fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`),()=>fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`)];
+  for(const p of proxies){try{const r=await p();if(r.ok){const t=await r.text();if(t&&t.length>100)return t;}}catch(e){}}
+  throw new Error('All proxies failed — try saving the recipe as a Word doc instead.');
+}
+async function extUrl(u){
+  try{
+    showLoad('Fetching page...');
+    const html=await fetchViaProxy(u);
+    const txt=html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\s{3,}/g,'\n').trim().slice(0,8000);
+    if(!txt)throw new Error('No text found on page');
+    showLoad('Extracting recipe...');
+    proc(await callGroq([{text:`Webpage text from ${u}:\n\n${txt}\n\n${PROMPT}`}]),null);
+  }catch(e){hideLoad();showErr('Could not fetch recipe. ('+(e.message||e)+')');}
+}
+async function extDoc(){
+  try{proc(await callGroq([{text:`Word document text:\n\n${dtxt.slice(0,7000)}\n\n${PROMPT}`}]),null);}
+  catch(e){hideLoad();showErr('Could not extract recipe. ('+(e.message||e)+')');}
+}
+
+function proc(raw,imgData){
+  try{
+    const d=JSON.parse(raw.replace(/```json|```/g,'').trim());
+    const aiCat=allCats().includes(d.category)?d.category:'Other';
+    pendingRec={id:Date.now().toString(),title:d.title||'Untitled Recipe',servings:d.servings||null,time:d.time||null,cuisine:d.cuisine||null,category:aiCat,ingredients:Array.isArray(d.ingredients)?d.ingredients:[],steps:Array.isArray(d.steps)?d.steps:[],notes:d.notes||null,imageData:imgData||null,emoji:FE[Math.floor(Math.random()*FE.length)],savedAt:new Date().toISOString(),favourite:false,comments:[]};
+    hideLoad();
+    document.getElementById('catsel').innerHTML=allCats().map(c=>`<option value="${c}"${c===aiCat?' selected':''}>${catEmoji(c)} ${c}</option>`).join('');
+    document.getElementById('catpreview').textContent=pendingRec.title;
+    document.getElementById('catpanel').style.display='block';
+    document.getElementById('extractbtn').style.display='none';
+    document.querySelector('#sadd .sa').scrollTop=9999;
+  }catch(e){hideLoad();showErr('Could not parse the recipe. Please try again.');}
+}
+function confirmSave(){
+  if(!pendingRec)return;
+  pendingRec.category=document.getElementById('catsel').value;
+  recs.unshift(pendingRec);save();
+  const savedId=pendingRec.id;
+  const savedTitle=pendingRec.title;
+  const hasPhoto=!!pendingRec.imageData;
+  showDetail(savedId);pendingRec=null;
+  // Generate AI food image in background if no user photo
+  if(!hasPhoto)genFoodImage(savedId,savedTitle);
+}
+
+async function genFoodImage(id,title){
+  try{
+    const prompt=encodeURIComponent(`professional food photography of ${title}, appetizing, restaurant quality, soft lighting, top down or 45 degree angle`);
+    const url=`https://image.pollinations.ai/prompt/${prompt}?width=600&height=400&nologo=true&seed=${Date.now()}`;
+    // Pre-load image to confirm it works before storing
+    await new Promise((res,rej)=>{const i=new Image();i.onload=res;i.onerror=rej;i.src=url;});
+    const r=recs.find(x=>x.id===id);
+    if(r&&!r.imageData){
+      r.imageData=url;save();
+      // Refresh hero if still on this detail screen
+      if(rid===id){
+        const h=document.getElementById('dhero');
+        h.innerHTML=`<img src="${url}"/>`;h.style.minHeight='';
+      }
+      // Refresh grid card
+      buildChips();render();
+    }
+  }catch(e){/* silent fail - emoji stays */}
+}
+
+load();
+</script>
+</body>
+</html>
