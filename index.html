@@ -10,6 +10,7 @@
 <meta name="theme-color" content="#1A4A4A"/>
 <link id="pwa-manifest" rel="manifest" href=""/>
 <title>Cronjes Recipe Blog</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Ccircle cx='100' cy='100' r='100' fill='%232A8A8A'/%3E%3Ccircle cx='100' cy='100' r='60' fill='%231A6060'/%3E%3Ctext x='100' y='118' text-anchor='middle' font-family='Georgia,serif' font-size='80' font-weight='bold' fill='%23E0F2F2'%3EC%3C/text%3E%3C/svg%3E"/>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.7.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
@@ -183,6 +184,36 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 <body>
 
 <div id="loader"><div class="spin"></div><p id="loadmsg">Extracting recipe...</p></div>
+
+<!-- IMAGE PICKER MODAL -->
+<div id="img-picker-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:300;align-items:flex-end;justify-content:center;">
+  <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:16px 16px calc(20px + var(--safe-b));max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div>
+        <div style="font-size:16px;color:var(--tx);">Pick an Image</div>
+        <div id="img-picker-subtitle" style="font-size:12px;color:var(--mu);font-family:Arial,sans-serif;margin-top:2px;"></div>
+      </div>
+      <button onclick="closeImgPicker()" style="background:none;border:none;font-size:26px;cursor:pointer;color:var(--mu);min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;">×</button>
+    </div>
+    <div id="img-picker-loading" style="text-align:center;padding:30px 0;font-family:Arial,sans-serif;color:var(--mu);">
+      <div class="spin" style="margin:0 auto 12px;"></div>Loading images…
+    </div>
+    <div id="img-picker-grid" style="display:none;grid-template-columns:1fr 1fr;gap:8px;"></div>
+    <div id="img-picker-none" style="display:none;text-align:center;padding:24px;font-family:Arial,sans-serif;color:var(--mu);font-size:14px;">No images found — try a different name</div>
+    <button onclick="closeImgPicker()" style="width:100%;background:none;border:1.5px solid var(--bds);border-radius:24px;padding:13px;font-size:14px;font-family:Arial,sans-serif;cursor:pointer;color:var(--mu);margin-top:12px;">Cancel</button>
+  </div>
+</div>
+
+<!-- CARD ACTION SHEET -->
+<div id="card-action-sheet" style="display:none;position:fixed;inset:0;z-index:400;">
+  <div onclick="closeCardSheet()" style="position:absolute;inset:0;background:rgba(0,0,0,0.45);"></div>
+  <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:white;border-radius:20px 20px 0 0;padding:16px 16px calc(16px + var(--safe-b));">
+    <div id="card-sheet-title" style="font-size:14px;color:var(--mu);font-family:Arial,sans-serif;text-align:center;padding:4px 0 14px;border-bottom:1px solid var(--bd);margin-bottom:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
+    <button onclick="cardSheetView()" style="width:100%;background:var(--tcl);border:none;color:var(--tcd);border-radius:14px;padding:14px;font-size:15px;font-family:Arial,sans-serif;cursor:pointer;margin-bottom:8px;text-align:left;">👁️ &nbsp;View Recipe</button>
+    <button onclick="cardSheetDelete()" style="width:100%;background:#fff0f0;border:1px solid #f0b0b0;color:#C05050;border-radius:14px;padding:14px;font-size:15px;font-family:Arial,sans-serif;cursor:pointer;margin-bottom:8px;text-align:left;">🗑️ &nbsp;Delete Recipe</button>
+    <button onclick="closeCardSheet()" style="width:100%;background:white;border:1.5px solid var(--bds);color:var(--mu);border-radius:14px;padding:14px;font-size:15px;font-family:Arial,sans-serif;cursor:pointer;">Cancel</button>
+  </div>
+</div>
 
 <div id="app">
 
@@ -425,11 +456,11 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
           </div>
         </div>
 
+        <label class="flbl" style="margin-top:12px;">📁 Category <span style="font-weight:normal;color:var(--mu);">(move recipe)</span></label>
+        <select class="finp" id="edit-cat" style="appearance:auto;-webkit-appearance:auto;"></select>
+
         <label class="flbl" style="margin-top:12px;">Cuisine</label>
         <input class="finp" type="text" id="edit-cuisine" placeholder="e.g. Italian"/>
-
-        <label class="flbl" style="margin-top:12px;">Category</label>
-        <select class="finp" id="edit-cat" style="appearance:auto;-webkit-appearance:auto;"></select>
 
         <label class="flbl" style="margin-top:16px;">Ingredients</label>
         <div id="edit-ings-list"></div>
@@ -583,6 +614,40 @@ function buildChips(){
 function filterCatDrop(val){catF=val;render();}
 function filterCat(c){catF=c;buildChips();render();}
 
+function makeRecipeCard(r, showCat){
+  const card=document.createElement('div');card.className='rc';card.onclick=()=>showDetail(r.id);
+  const bg=catColor(r.category);
+  const img=r.imageData?`<div class="rc-img" style="padding:0;overflow:hidden"><img src="${r.imageData}" style="width:100%;height:110px;object-fit:cover;display:block"/></div>`:`<div class="rc-img" style="background:${bg}">${r.emoji}</div>`;
+  card.innerHTML=`${img}${r.favourite?'<div class="rc-star">⭐</div>':''}<div class="rc-body"><div class="rc-title">${r.title}</div><div class="rc-meta">${[r.time,r.servings].filter(Boolean).join(' · ')}</div>${showCat&&r.category?`<span class="rc-cat">${r.category}</span>`:''}</div>`;
+  addLongPress(card,r.id);
+  return card;
+}
+
+let _longPressId=null;
+function addLongPress(card,id){
+  let timer=null,moved=false;
+  card.addEventListener('touchstart',()=>{moved=false;timer=setTimeout(()=>{if(!moved){showCardSheet(id);}},580);},{passive:true});
+  card.addEventListener('touchmove',()=>{moved=true;clearTimeout(timer);},{passive:true});
+  card.addEventListener('touchend',()=>clearTimeout(timer));
+  card.addEventListener('touchcancel',()=>clearTimeout(timer));
+}
+
+function showCardSheet(id){
+  _longPressId=id;
+  const r=recs.find(x=>x.id===id);if(!r)return;
+  document.getElementById('card-sheet-title').textContent=r.title;
+  document.getElementById('card-action-sheet').style.display='block';
+}
+function closeCardSheet(){document.getElementById('card-action-sheet').style.display='none';_longPressId=null;}
+function cardSheetView(){const id=_longPressId;closeCardSheet();if(id)showDetail(id);}
+function cardSheetDelete(){
+  const id=_longPressId;closeCardSheet();
+  const r=recs.find(x=>x.id===id);if(!r)return;
+  if(!confirm('Delete "'+r.title+'"?'))return;
+  recs=recs.filter(x=>x.id!==id);save();
+  if(tab==='c')renderCats();else render();
+}
+
 function render(){
   const q=(document.getElementById('srch').value||'').toLowerCase();
   let list=recs;
@@ -594,13 +659,7 @@ function render(){
   const empty=document.getElementById('pempty');
   if(!list.length){empty.style.display='block';document.getElementById('emptymsg').innerHTML=tab==='f'?'No favourites yet.<br>Tap ★ on a recipe to save it!':'No recipes yet.<br>Tap + to add your first one!';}
   else empty.style.display='none';
-  list.forEach(r=>{
-    const card=document.createElement('div');card.className='rc';card.onclick=()=>showDetail(r.id);
-    const bg=catColor(r.category);
-    const img=r.imageData?`<div class="rc-img" style="padding:0;overflow:hidden"><img src="${r.imageData}" style="width:100%;height:110px;object-fit:cover;display:block"/></div>`:`<div class="rc-img" style="background:${bg}">${r.emoji}</div>`;
-    card.innerHTML=`${img}${r.favourite?'<div class="rc-star">⭐</div>':''}<div class="rc-body"><div class="rc-title">${r.title}</div><div class="rc-meta">${[r.time,r.servings].filter(Boolean).join(' · ')}</div>${r.category?`<span class="rc-cat">${r.category}</span>`:''}</div>`;
-    p.appendChild(card);
-  });
+  list.forEach(r=>p.appendChild(makeRecipeCard(r,true)));
 }
 
 function renderCats(){
@@ -639,13 +698,7 @@ function openCatDetail(c){
     grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:50px 24px;font-family:Arial,sans-serif;color:var(--mu);">No recipes in this category yet.</div>';
     return;
   }
-  list.forEach(r=>{
-    const card=document.createElement('div');card.className='rc';card.onclick=()=>showDetail(r.id);
-    const bg=catColor(r.category);
-    const img=r.imageData?`<div class="rc-img" style="padding:0;overflow:hidden"><img src="${r.imageData}" style="width:100%;height:110px;object-fit:cover;display:block"/></div>`:`<div class="rc-img" style="background:${bg}">${r.emoji}</div>`;
-    card.innerHTML=`${img}${r.favourite?'<div class="rc-star">⭐</div>':''}<div class="rc-body"><div class="rc-title">${r.title}</div><div class="rc-meta">${[r.time,r.servings].filter(Boolean).join(' · ')}</div></div>`;
-    grid.appendChild(card);
-  });
+  list.forEach(r=>grid.appendChild(makeRecipeCard(r,false)));
 }
 
 function closeCatDetail(){
@@ -1119,19 +1172,62 @@ function editOnImg(e){
   e.target.value='';
 }
 async function editSearchImage(){
-  const btn=document.getElementById('edit-search-img-btn');
   const queryInput=document.getElementById('img-search-query');
-  const typedQuery=queryInput?queryInput.value.trim():'';
-  const title=typedQuery||document.getElementById('edit-title').value.trim()||(recs.find(x=>x.id===rid)?.title||'food');
-  btn.textContent='⏳ Searching…';btn.disabled=true;
-  try{
-    let url=await searchMealDB(title).catch(()=>null);
-    if(!url)url=await searchLoremFlickr(title).catch(()=>null);
-    if(!url)url=await searchPollinations(title).catch(()=>null);
-    if(url){editPendingImg=url;setEditImgPreview(url);}
-    else alert('Could not find an image for "'+title+'". Try a different name or upload your own photo.');
-  }catch(e){}
-  btn.textContent='🔍 Search';btn.disabled=false;
+  const query=(queryInput?queryInput.value.trim():'')||document.getElementById('edit-title').value.trim()||(recs.find(x=>x.id===rid)?.title||'food');
+  showImgPicker(query);
+}
+
+async function showImgPicker(query){
+  const modal=document.getElementById('img-picker-modal');
+  const grid=document.getElementById('img-picker-grid');
+  const loading=document.getElementById('img-picker-loading');
+  const none=document.getElementById('img-picker-none');
+  const subtitle=document.getElementById('img-picker-subtitle');
+  modal.style.display='flex';
+  grid.style.display='none';grid.innerHTML='';
+  loading.style.display='block';none.style.display='none';
+  subtitle.textContent='Searching for: '+query;
+  // Load 6 images using Unsplash Source (different widths = different photos)
+  const encoded=encodeURIComponent(query+' food');
+  const sources=[
+    `https://source.unsplash.com/600x400/?${encoded}`,
+    `https://source.unsplash.com/601x400/?${encoded}`,
+    `https://source.unsplash.com/602x400/?${encoded}`,
+    `https://source.unsplash.com/603x400/?${encoded}`,
+    `https://source.unsplash.com/604x400/?${encoded}`,
+    `https://source.unsplash.com/605x400/?${encoded}`,
+  ];
+  loading.style.display='none';
+  grid.style.display='grid';
+  let loaded=0;
+  sources.forEach(src=>{
+    const wrap=document.createElement('div');
+    wrap.style.cssText='position:relative;border-radius:12px;overflow:hidden;background:#dde;height:130px;cursor:pointer;border:3px solid transparent;transition:border-color 0.15s;';
+    // shimmer while loading
+    wrap.style.background='linear-gradient(90deg,#c8dede 25%,#d8eaea 50%,#c8dede 75%)';
+    wrap.style.backgroundSize='200% 100%';wrap.style.animation='shimmer 1.4s infinite';
+    const img=new Image();
+    img.onload=()=>{
+      wrap.style.animation='';wrap.style.backgroundSize='';
+      wrap.innerHTML=`<img src="${img.src}" style="width:100%;height:100%;object-fit:cover;display:block;"/>`;
+      loaded++;
+      if(loaded===0&&sources.every(_=>true))none.style.display='none';
+    };
+    img.onerror=()=>{wrap.style.display='none';};
+    img.src=src;
+    wrap.onclick=()=>selectPickerImage(src);
+    wrap.addEventListener('touchstart',()=>wrap.style.borderColor='var(--tc)',{passive:true});
+    wrap.addEventListener('touchend',()=>wrap.style.borderColor='transparent',{passive:true});
+    grid.appendChild(wrap);
+  });
+}
+
+function selectPickerImage(url){
+  editPendingImg=url;setEditImgPreview(url);closeImgPicker();
+}
+
+function closeImgPicker(){
+  document.getElementById('img-picker-modal').style.display='none';
 }
 
 async function refreshImage(){
@@ -1250,14 +1346,19 @@ function genIconPng(size){
   document.getElementById('pwa-manifest').href=mUrl;
 })();
 
-// PWA — service worker
+// PWA — service worker (inline via blob, scope set to page directory)
 (function(){
   if(!('serviceWorker' in navigator))return;
-  const sw=`const CACHE='cronjes-v2';
-self.addEventListener('install',e=>{self.skipWaiting();});
+  const sw=`const CACHE='cronjes-v3';
+self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.add(self.location.href)).catch(()=>{}));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
-self.addEventListener('fetch',e=>{if(e.request.destination==='document')e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});`;
-  try{const blob=new Blob([sw],{type:'application/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}catch(e){}
+self.addEventListener('fetch',e=>{if(e.request.mode==='navigate')e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{caches.open(CACHE).then(c=>c.put(e.request,res.clone()));return res;})));});`;
+  try{
+    const blob=new Blob([sw],{type:'application/javascript'});
+    const url=URL.createObjectURL(blob);
+    const scope=location.pathname.replace(/[^/]*$/,'') || '/';
+    navigator.serviceWorker.register(url,{scope}).catch(()=>{});
+  }catch(e){}
 })();
 
 // PWA — install prompt
