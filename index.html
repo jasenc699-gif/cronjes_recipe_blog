@@ -510,15 +510,24 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 
         <div class="shd" style="margin-top:24px;">Cloud Sync</div>
         <div class="bk-card">
-          <h4>☁️ Sync Between Devices</h4>
-          <p>Uses <strong>JSONBin.io</strong> (free). Sign up at <a href="https://jsonbin.io" target="_blank">jsonbin.io</a> → grab your <strong>Master Key</strong> from the API Keys page. On the first device tap <em>Create New Bin</em> — then copy the Bin ID to your second device and tap <em>Sync Now</em> on both.</p>
+          <h4>☁️ Sync Between Devices — Firebase (Free)</h4>
+          <p style="margin-bottom:8px;">Uses <strong>Google Firebase</strong> — free forever, up to 1GB storage. Takes ~2 minutes to set up:</p>
+          <ol style="font-size:13px;color:var(--mu);font-family:Arial,sans-serif;line-height:1.9;padding-left:18px;margin-bottom:10px;">
+            <li>Go to <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a></li>
+            <li>Create a project → Add a <strong>Realtime Database</strong></li>
+            <li>Start in <strong>test mode</strong> (or locked mode + copy secret)</li>
+            <li>Copy your <strong>Database URL</strong> (looks like <em>https://your-app.firebaseio.com</em>)</li>
+            <li>Go to Project Settings → Service Accounts → <strong>Database secrets</strong> → copy your secret</li>
+          </ol>
           <div class="kinfo" id="syncinfo" style="margin-bottom:10px;"></div>
-          <label class="flbl" style="margin-top:6px;">JSONBin Master Key</label>
-          <input class="finp" type="password" id="jbkey" placeholder="$2a$10$..." autocomplete="off" style="margin-bottom:10px;"/>
-          <label class="flbl">Bin ID <span style="font-weight:normal;color:var(--mu);">(leave blank on first device)</span></label>
-          <input class="finp" type="text" id="jbbin" placeholder="Will be created automatically" autocomplete="off" style="margin-bottom:12px;"/>
+          <label class="flbl">Firebase Database URL</label>
+          <input class="finp" type="url" id="jbbin" placeholder="https://your-app-default-rtdb.firebaseio.com" autocomplete="off" style="margin-bottom:10px;"/>
+          <label class="flbl">Database Secret <span style="font-weight:normal;color:var(--mu);">(from Project Settings → Service Accounts)</span></label>
+          <input class="finp" type="password" id="jbkey" placeholder="Your database secret key" autocomplete="off" style="margin-bottom:12px;"/>
+          <label class="flbl">Sync ID <span style="font-weight:normal;color:var(--mu);">(choose any shared word, same on all devices)</span></label>
+          <input class="finp" type="text" id="fbsyncid" placeholder="e.g. cronjes-family" autocomplete="off" style="margin-bottom:12px;"/>
           <button class="pbtn" onclick="syncNow()">☁️ Sync Now</button>
-          <div id="syncresult" style="margin-top:10px;font-size:13px;font-family:Arial,sans-serif;display:none;line-height:1.6;"></div>
+          <div id="syncresult" style="margin-top:10px;font-size:13px;font-family:Arial,sans-serif;display:none;line-height:1.6;white-space:pre-wrap;"></div>
         </div>
 
         <div class="shd" style="margin-top:24px;">Backup &amp; Restore</div>
