@@ -49,6 +49,12 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 .chips::-webkit-scrollbar{display:none;}
 .chip{background:white;border:1px solid var(--bds);border-radius:24px;padding:8px 16px;font-size:13px;font-family:Arial,sans-serif;white-space:nowrap;cursor:pointer;color:var(--mu);flex-shrink:0;}
 .chip.on{background:var(--tc);border-color:var(--tc);color:white;}
+.cat-filter-row{padding:6px 14px 10px;}
+.cat-filter-wrap{position:relative;display:flex;align-items:center;background:white;border:1.5px solid var(--bds);border-radius:24px;padding:0 14px;height:42px;gap:8px;transition:border-color 0.15s;}
+.cat-filter-wrap:focus-within{border-color:var(--tc);}
+.cat-filter-ico{color:var(--tc);flex-shrink:0;}
+.cat-filter-sel{flex:1;border:none;outline:none;font-size:14px;font-family:Arial,sans-serif;color:var(--tx);background:transparent;appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:4px;}
+.cat-filter-arr{color:var(--mu);flex-shrink:0;pointer-events:none;}
 
 /* RECIPE GRID */
 .rgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:4px 14px 24px;}
@@ -85,6 +91,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 .addopt.on{border-color:var(--tc);background:var(--tcl);}
 .addopt .ico{font-size:26px;display:block;margin-bottom:8px;}
 .addopt .lbl{font-size:13px;font-family:Arial,sans-serif;color:var(--tx);}
+.addopt-hint{font-size:10px;color:var(--mu);font-family:Arial,sans-serif;margin-top:4px;line-height:1.3;}
 .fsec{padding:0 14px 16px;}
 .flbl{font-size:13px;color:var(--mu);font-family:Arial,sans-serif;margin-bottom:8px;display:block;}
 .finp{width:100%;background:white;border:1px solid var(--bds);border-radius:12px;padding:13px 15px;font-size:15px;font-family:Arial,sans-serif;color:var(--tx);outline:none;}
@@ -98,8 +105,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 .pbtn.sec{background:white;color:var(--tc);border:1.5px solid var(--tc);}
 .pbtn.sec:active{background:var(--tcl);}
 .errmsg{background:#fff0f0;border:1px solid #f0b0b0;color:#a03030;padding:12px 14px;border-radius:12px;font-size:13px;font-family:Arial,sans-serif;margin-top:10px;display:none;line-height:1.6;}
-#imgprev{width:100%;border-radius:12px;margin-top:10px;display:none;max-height:180px;object-fit:cover;}
-#fip,#dip,#bkimp{display:none;}
+#bkimp{display:none;}
 
 /* DETAIL */
 .dhero{min-height:150px;display:flex;align-items:center;justify-content:center;font-size:56px;background:var(--tcl);}
@@ -232,7 +238,15 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
     </header>
     <div class="sa">
       <div class="srch"><input id="srch" type="text" placeholder="Search recipes..." oninput="render()"/></div>
-      <div id="chipwrap" class="chips"></div>
+      <div class="cat-filter-row">
+        <div class="cat-filter-wrap">
+          <svg class="cat-filter-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          <select id="catdrop" class="cat-filter-sel" onchange="filterCatDrop(this.value)">
+            <option value="All">All Categories</option>
+          </select>
+          <svg class="cat-filter-arr" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+      </div>
       <div id="pall" class="rgrid"></div>
       <div id="pfav" class="rgrid" style="display:none"></div>
       <div id="pcat" class="cgrid" style="display:none"></div>
@@ -258,26 +272,45 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
   <div id="sadd" class="scr">
     <div class="sub-hdr"><button class="bk" onclick="go('main')">‹</button><h2>Add a Recipe</h2></div>
     <div class="sa" style="padding-bottom:24px;">
+      <!-- Hidden file inputs -->
+      <input type="file" id="fip" accept="image/*" onchange="onImg(event)" style="display:none"/>
+      <input type="file" id="dip" accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" onchange="onDoc(event)" style="display:none"/>
+
+      <!-- Mode cards — tap to act immediately -->
       <div class="addopts">
-        <div class="addopt on" id="op-p" onclick="selMode('p')"><span class="ico">📷</span><div class="lbl">Screenshot</div></div>
-        <div class="addopt" id="op-u" onclick="selMode('u')"><span class="ico">🔗</span><div class="lbl">Website URL</div></div>
-        <div class="addopt" id="op-d" onclick="selMode('d')"><span class="ico">📎</span><div class="lbl">Document</div></div>
+        <div class="addopt on" id="op-p" onclick="selMode('p')">
+          <span class="ico">📷</span>
+          <div class="lbl">Screenshot</div>
+          <div id="op-p-hint" class="addopt-hint">Tap to choose image</div>
+        </div>
+        <div class="addopt" id="op-u" onclick="selMode('u')">
+          <span class="ico">🔗</span>
+          <div class="lbl">Website URL</div>
+          <div class="addopt-hint">Paste a recipe link</div>
+        </div>
+        <div class="addopt" id="op-d" onclick="selMode('d')">
+          <span class="ico">📎</span>
+          <div class="lbl">Document</div>
+          <div id="op-d-hint" class="addopt-hint">Tap to choose file</div>
+        </div>
       </div>
-      <div id="sec-p" class="fsec">
-        <label class="flbl">Recipe photo or screenshot</label>
-        <div class="upz" onclick="document.getElementById('fip').click()"><span class="ico">📸</span><p><strong>Tap to choose image</strong><br>From gallery or camera</p></div>
-        <input type="file" id="fip" accept="image/*" onchange="onImg(event)"/>
-        <img id="imgprev" alt="preview"/>
+
+      <!-- Image preview (shown after photo selected) -->
+      <div id="sec-p" class="fsec" style="display:none">
+        <img id="imgprev" alt="preview" style="width:100%;border-radius:12px;max-height:180px;object-fit:cover;"/>
+        <button class="pbtn sec" style="margin-top:10px;" onclick="document.getElementById('fip').click()">Choose Different Image</button>
       </div>
+
+      <!-- URL input (shown when URL mode selected) -->
       <div id="sec-u" class="fsec" style="display:none">
         <label class="flbl">Recipe website URL</label>
         <input type="url" class="finp" id="urlinp" placeholder="https://www.example.com/recipe"/>
       </div>
+
+      <!-- Doc confirmation (shown after doc selected) -->
       <div id="sec-d" class="fsec" style="display:none">
-        <label class="flbl">Word (.docx) or PDF document</label>
-        <div class="upz" onclick="document.getElementById('dip').click()"><span class="ico">📎</span><p><strong>Tap to choose a file</strong><br>Supports .docx Word documents and .pdf files</p></div>
-        <input type="file" id="dip" accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" onchange="onDoc(event)"/>
-        <div id="docname" style="margin-top:10px;font-size:13px;font-family:Arial,sans-serif;color:var(--tc);display:none;"></div>
+        <div id="docname" style="font-size:14px;font-family:Arial,sans-serif;color:var(--tc);background:var(--tcl);border-radius:12px;padding:12px 14px;line-height:1.5;"></div>
+        <button class="pbtn sec" style="margin-top:10px;" onclick="document.getElementById('dip').click()">Choose Different File</button>
       </div>
       <div style="padding:0 14px;">
         <div class="errmsg" id="errmsg"></div>
@@ -461,11 +494,14 @@ function setTab(t){
 
 function buildChips(){
   const used=[...new Set(recs.map(r=>r.category).filter(Boolean))];
-  const allOn=catF==='All'?' on':'';
-  document.getElementById('chipwrap').innerHTML=`<span class="chip${allOn}" onclick="filterCat('All',this)">All</span>`
-    +used.map(c=>`<span class="chip${catF===c?' on':''}" onclick="filterCat('${c}',this)">${catEmoji(c)} ${c}</span>`).join('');
+  const drop=document.getElementById('catdrop');
+  if(!drop)return;
+  drop.innerHTML='<option value="All">All Categories</option>'
+    +used.map(c=>`<option value="${c}"${catF===c?' selected':''}>${catEmoji(c)} ${c}</option>`).join('');
+  if(catF&&catF!=='All')drop.value=catF;
 }
-function filterCat(c,el){catF=c;document.querySelectorAll('#chipwrap .chip').forEach(x=>x.classList.remove('on'));el.classList.add('on');render();}
+function filterCatDrop(val){catF=val;render();}
+function filterCat(c){catF=c;buildChips();render();}
 
 function render(){
   const q=(document.getElementById('srch').value||'').toLowerCase();
@@ -560,22 +596,44 @@ async function delRecipe(){if(!confirm('Delete this recipe?'))return;recs=recs.f
 function resetAdd(){
   mode='p';fb64=null;dtxt=null;pendingRec=null;
   ['fip','dip'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('imgprev').style.display='none';
+  document.getElementById('imgprev').src='';
   document.getElementById('urlinp').value='';
-  document.getElementById('docname').style.display='none';
+  document.getElementById('docname').textContent='';
   document.getElementById('errmsg').style.display='none';
   document.getElementById('catpanel').style.display='none';
   document.getElementById('extractbtn').style.display='block';
-  selMode('p');
+  ['p','u','d'].forEach(x=>{document.getElementById('op-'+x).classList.toggle('on',x==='p');document.getElementById('sec-'+x).style.display='none';});
+  document.getElementById('op-p-hint').textContent='Tap to choose image';
+  document.getElementById('op-d-hint').textContent='Tap to choose file';
 }
 function selMode(m){
+  const prev=mode;
   mode=m;
-  ['p','u','d'].forEach(x=>{document.getElementById('op-'+x).classList.toggle('on',x===m);document.getElementById('sec-'+x).style.display=x===m?'block':'none';});
+  ['p','u','d'].forEach(x=>document.getElementById('op-'+x).classList.toggle('on',x===m));
+  // Hide all content sections first
+  ['p','u','d'].forEach(x=>document.getElementById('sec-'+x).style.display='none');
+  if(m==='p'){
+    // Open image picker immediately; show preview section only if already have image
+    if(fb64){document.getElementById('sec-p').style.display='block';}
+    else{document.getElementById('fip').click();}
+  } else if(m==='u'){
+    document.getElementById('sec-u').style.display='block';
+    setTimeout(()=>document.getElementById('urlinp').focus(),50);
+  } else if(m==='d'){
+    // Open doc picker immediately; show confirmation section only if already have doc
+    if(dtxt){document.getElementById('sec-d').style.display='block';}
+    else{document.getElementById('dip').click();}
+  }
 }
 function onImg(e){
   const f=e.target.files[0];if(!f)return;
   if(f.size>5242880){showErr('Image too large (max 5MB).');return;}
-  const rd=new FileReader();rd.onload=ev=>{fb64=ev.target.result;const im=document.getElementById('imgprev');im.src=fb64;im.style.display='block';};rd.readAsDataURL(f);
+  const rd=new FileReader();rd.onload=ev=>{
+    fb64=ev.target.result;
+    const im=document.getElementById('imgprev');im.src=fb64;
+    document.getElementById('sec-p').style.display='block';
+    document.getElementById('op-p-hint').textContent='Image ready ✓';
+  };rd.readAsDataURL(f);
 }
 async function onDoc(e){
   const f=e.target.files[0];if(!f)return;
@@ -595,11 +653,11 @@ async function onDoc(e){
       }
       dtxt=text.replace(/\n{3,}/g,'\n\n').trim();
       if(!dtxt){showErr('Could not extract text from this PDF. Try a Word document instead.');return;}
-      dn.textContent='✓ '+f.name+' ('+pdf.numPages+' page'+(pdf.numPages!==1?'s':'')+'  · PDF)';dn.style.display='block';
+      dn.textContent='📄 '+f.name+' · '+pdf.numPages+' page'+(pdf.numPages!==1?'s':'')+' · PDF';document.getElementById('sec-d').style.display='block';document.getElementById('op-d-hint').textContent='File ready ✓';
     }catch(er){showErr('Could not read this PDF. ('+(er.message||er)+')');}
   } else {
     if(typeof mammoth==='undefined'){showErr('Document reader still loading. Try again.');return;}
-    try{const buf=await f.arrayBuffer();const res=await mammoth.extractRawText({arrayBuffer:buf});dtxt=res.value.replace(/\n{3,}/g,'\n\n').trim();dn.textContent='✓ '+f.name;dn.style.display='block';}
+    try{const buf=await f.arrayBuffer();const res=await mammoth.extractRawText({arrayBuffer:buf});dtxt=res.value.replace(/\n{3,}/g,'\n\n').trim();dn.textContent='📄 '+f.name;document.getElementById('sec-d').style.display='block';document.getElementById('op-d-hint').textContent='File ready ✓';}
     catch(er){showErr('Could not read this Word document.');}
   }
 }
