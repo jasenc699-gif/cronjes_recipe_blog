@@ -138,6 +138,15 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 .cmtsub{background:var(--tc);color:white;border:none;border-radius:24px;padding:11px 16px;font-size:13px;font-family:Arial,sans-serif;cursor:pointer;align-self:flex-end;min-height:46px;}
 .delbtn{margin:8px 16px 24px;background:none;border:1.5px solid #E0B0B0;color:#C05050;border-radius:24px;padding:13px;font-size:14px;font-family:Arial,sans-serif;cursor:pointer;width:calc(100% - 32px);display:block;min-height:50px;}
 
+/* EDIT MODE */
+.edit-row{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;}
+.edit-row textarea,.edit-row input[type=text]{flex:1;border:1px solid var(--bds);border-radius:10px;padding:9px 12px;font-size:14px;font-family:Arial,sans-serif;color:var(--tx);outline:none;resize:none;background:white;}
+.edit-row textarea:focus,.edit-row input[type=text]:focus{border-color:var(--tc);}
+.edit-rm{background:none;border:1.5px solid #E0B0B0;color:#C05050;border-radius:8px;width:36px;min-height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:19px;line-height:1;}
+.edit-add{background:none;border:1.5px dashed var(--bds);border-radius:10px;padding:10px;font-size:13px;font-family:Arial,sans-serif;color:var(--tc);width:100%;cursor:pointer;text-align:center;margin-top:2px;}
+.edit-add:active{background:var(--tcl);}
+#dedit-btn{background:none;border:none;cursor:pointer;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border-radius:50%;}
+
 /* LOADER */
 #loader{position:fixed;inset:0;background:rgba(253,246,236,0.95);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:200;gap:18px;}
 .spin{width:42px;height:42px;border:3px solid var(--bds);border-top-color:var(--tc);border-radius:50%;animation:sp 0.85s linear infinite;}
@@ -331,47 +340,94 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
   <div id="sdet" class="scr">
     <div class="sub-hdr">
       <button class="bk" onclick="go('main')">‹</button>
-      <h2 id="dnav" style="font-size:14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></h2>
-      <button id="starbtn" onclick="togFav()" style="background:none;border:none;cursor:pointer;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:flex-end;padding:0 0 0 8px;">
-        <svg id="starsvg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4A9090" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-      </button>
+      <h2 id="dnav" style="font-size:14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1;"></h2>
+      <div style="display:flex;align-items:center;flex-shrink:0;">
+        <button id="dedit-btn" onclick="toggleEditMode()" title="Edit recipe">
+          <svg id="dedit-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4A9090" stroke-width="1.8"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button id="starbtn" onclick="togFav()" style="background:none;border:none;cursor:pointer;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;padding:0;">
+          <svg id="starsvg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4A9090" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        </button>
+      </div>
     </div>
     <div class="sa">
       <div style="position:relative;">
         <div id="dhero" class="dhero">🍴</div>
-        <button id="dhero-refresh" onclick="refreshImage()" title="Search for a new image" style="position:absolute;bottom:9px;right:9px;background:rgba(26,60,60,0.72);border:none;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 2px 8px rgba(0,0,0,0.25);transition:background 0.15s;" onmouseenter="this.style.background='rgba(42,138,138,0.85)'" onmouseleave="this.style.background='rgba(26,60,60,0.72)'">
+        <button id="dhero-refresh" onclick="refreshImage()" title="Search for new image" style="display:none;position:absolute;bottom:9px;right:9px;background:rgba(26,60,60,0.72);border:none;border-radius:50%;width:38px;height:38px;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 2px 8px rgba(0,0,0,0.25);">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.3"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         </button>
       </div>
-      <div class="dbody">
-        <div class="dtitle" id="dtitle"></div>
-        <div class="drow">
-          <span class="catbadge" id="dcatb" onclick="openCatEdit()" title="Tap to change category" style="cursor:pointer;">
-            <span id="dcatb-txt"></span> ✎
-          </span>
-          <select id="dcatsel" class="finp" style="display:none;width:auto;padding:5px 10px;font-size:13px;margin:0;" onchange="saveCatEdit()"></select>
-          <button id="dstarbtn" onclick="togFav()" class="starbtn">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            <span id="dstarlbl">Add to Favourites</span>
-          </button>
+
+      <!-- VIEW MODE -->
+      <div id="ddet-view">
+        <div class="dbody">
+          <div class="dtitle" id="dtitle"></div>
+          <div class="drow">
+            <span class="catbadge" id="dcatb"><span id="dcatb-txt"></span></span>
+            <select id="dcatsel" class="finp" style="display:none;width:auto;padding:5px 10px;font-size:13px;margin:0;" onchange="saveCatEdit()"></select>
+            <button id="dstarbtn" onclick="togFav()" class="starbtn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <span id="dstarlbl">Add to Favourites</span>
+            </button>
+          </div>
+          <div class="dmeta" id="dmeta"></div>
+          <div class="shd">Ingredients</div>
+          <ul class="ingl" id="dings"></ul>
+          <div class="shd">Instructions</div>
+          <ol class="stepl" id="dsteps"></ol>
+          <div id="dnoteswrap" style="display:none"><div class="shd">Notes</div><p id="dnotes" style="font-size:14px;line-height:1.8;color:var(--mu);padding-bottom:4px;"></p></div>
         </div>
-        <div class="dmeta" id="dmeta"></div>
-        <div class="shd">Ingredients</div>
-        <ul class="ingl" id="dings"></ul>
-        <div class="shd">Instructions</div>
-        <ol class="stepl" id="dsteps"></ol>
-        <div id="dnoteswrap" style="display:none"><div class="shd">Notes</div><p id="dnotes" style="font-size:14px;line-height:1.8;color:var(--mu);padding-bottom:4px;"></p></div>
-      </div>
-      <div class="cmtsec">
-        <div class="shd">Notes &amp; Comments</div>
-        <div id="cmtlist"></div>
-        <div class="cmtform">
-          <textarea id="cmtinp" placeholder="Add a note or comment..."></textarea>
-          <button class="cmtsub" onclick="postCmt()">Post</button>
+        <div class="cmtsec">
+          <div class="shd">Notes &amp; Comments</div>
+          <div id="cmtlist"></div>
+          <div class="cmtform">
+            <textarea id="cmtinp" placeholder="Add a note or comment..."></textarea>
+            <button class="cmtsub" onclick="postCmt()">Post</button>
+          </div>
         </div>
+        <button class="delbtn" onclick="delRecipe()">Delete Recipe</button>
+        <div style="height:16px;"></div>
       </div>
-      <button class="delbtn" onclick="delRecipe()">Delete Recipe</button>
-      <div style="height:16px;"></div>
+
+      <!-- EDIT MODE -->
+      <div id="ddet-edit" style="display:none;padding:14px 16px 32px;">
+        <div class="shd" style="margin-top:0;">Editing Recipe</div>
+
+        <label class="flbl" style="margin-top:10px;">Title</label>
+        <input class="finp" type="text" id="edit-title" placeholder="Recipe name"/>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+          <div>
+            <label class="flbl">Servings</label>
+            <input class="finp" type="text" id="edit-servings" placeholder="e.g. 4 servings"/>
+          </div>
+          <div>
+            <label class="flbl">Time</label>
+            <input class="finp" type="text" id="edit-time" placeholder="e.g. 30 mins"/>
+          </div>
+        </div>
+
+        <label class="flbl" style="margin-top:12px;">Cuisine</label>
+        <input class="finp" type="text" id="edit-cuisine" placeholder="e.g. Italian"/>
+
+        <label class="flbl" style="margin-top:12px;">Category</label>
+        <select class="finp" id="edit-cat" style="appearance:auto;-webkit-appearance:auto;"></select>
+
+        <label class="flbl" style="margin-top:16px;">Ingredients</label>
+        <div id="edit-ings-list"></div>
+        <button class="edit-add" onclick="editAddIng()">+ Add ingredient</button>
+
+        <label class="flbl" style="margin-top:16px;">Steps</label>
+        <div id="edit-steps-list"></div>
+        <button class="edit-add" onclick="editAddStep()">+ Add step</button>
+
+        <label class="flbl" style="margin-top:16px;">Notes</label>
+        <textarea class="finp" id="edit-notes" rows="3" style="resize:vertical;min-height:80px;" placeholder="Optional tips or notes..."></textarea>
+
+        <button class="pbtn" style="margin-top:18px;" onclick="saveEdit()">Save Changes</button>
+        <button class="pbtn sec" style="margin-top:8px;" onclick="cancelEdit()">Cancel</button>
+      </div>
+
     </div>
   </div>
 
@@ -454,7 +510,7 @@ function saveCustomCats(arr){store.set(CK,JSON.stringify(arr));}
 function allCats(){return[...CATS,...getCustomCats().filter(c=>!CATS.includes(c))];}
 function catEmoji(c){return CE[c]||'🍴';}
 function catColor(c){return CC[c]||CUSTOMCC;}
-let recs=[],tab='a',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null;
+let recs=[],tab='a',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false;
 
 function load(){
   try{const v=store.get(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
@@ -483,7 +539,7 @@ function go(s){
   if(!el)return;
   el.classList.add('on');
   if(s==='add')resetAdd();
-  if(s==='main'){buildChips();render();}
+  if(s==='main'){if(editMode)exitEditMode();buildChips();render();}
   if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();}
 }
 
@@ -547,8 +603,108 @@ function renderCats(){
   });
 }
 
+function toggleEditMode(){
+  if(editMode)cancelEdit();else enterEditMode();
+}
+
+function enterEditMode(){
+  const r=recs.find(x=>x.id===rid);if(!r)return;
+  editMode=true;
+  // Populate form
+  document.getElementById('edit-title').value=r.title||'';
+  document.getElementById('edit-servings').value=r.servings||'';
+  document.getElementById('edit-time').value=r.time||'';
+  document.getElementById('edit-cuisine').value=r.cuisine||'';
+  document.getElementById('edit-notes').value=r.notes||'';
+  // Category
+  const catSel=document.getElementById('edit-cat');
+  catSel.innerHTML=allCats().map(c=>`<option value="${c}"${c===r.category?' selected':''}>${catEmoji(c)} ${c}</option>`).join('');
+  // Ingredients list
+  renderEditList('edit-ings-list',r.ingredients||[],false);
+  // Steps list
+  renderEditList('edit-steps-list',r.steps||[],true);
+  // Toggle UI
+  document.getElementById('ddet-view').style.display='none';
+  document.getElementById('ddet-edit').style.display='block';
+  document.getElementById('dhero-refresh').style.display='flex';
+  document.getElementById('dedit-ico').setAttribute('stroke','#C05050');
+  document.querySelector('#sdet .sa').scrollTop=0;
+}
+
+function renderEditList(containerId,items,isSteps){
+  const el=document.getElementById(containerId);
+  el.innerHTML='';
+  items.forEach((item,i)=>{
+    el.appendChild(makeEditRow(item,isSteps,i));
+  });
+}
+
+function makeEditRow(value,isSteps,idx){
+  const wrap=document.createElement('div');wrap.className='edit-row';
+  const ta=document.createElement('textarea');
+  ta.value=value;ta.rows=isSteps?2:1;
+  ta.style.minHeight=isSteps?'60px':'38px';
+  ta.oninput=function(){this.style.height='auto';this.style.height=this.scrollHeight+'px';};
+  ta.placeholder=isSteps?'Step description...':'Ingredient...';
+  const rm=document.createElement('button');rm.className='edit-rm';rm.textContent='×';
+  rm.title='Remove';rm.type='button';
+  rm.onclick=function(){wrap.remove();};
+  wrap.appendChild(ta);wrap.appendChild(rm);
+  return wrap;
+}
+
+function editAddIng(){
+  const el=document.getElementById('edit-ings-list');
+  el.appendChild(makeEditRow('',false,el.children.length));
+  el.lastChild.querySelector('textarea').focus();
+}
+
+function editAddStep(){
+  const el=document.getElementById('edit-steps-list');
+  el.appendChild(makeEditRow('',true,el.children.length));
+  el.lastChild.querySelector('textarea').focus();
+}
+
+function getEditListValues(containerId){
+  return [...document.getElementById(containerId).querySelectorAll('textarea')]
+    .map(t=>t.value.trim()).filter(Boolean);
+}
+
+function saveEdit(){
+  const r=recs.find(x=>x.id===rid);if(!r)return;
+  const title=document.getElementById('edit-title').value.trim();
+  if(!title){document.getElementById('edit-title').focus();return;}
+  r.title=title;
+  r.servings=document.getElementById('edit-servings').value.trim()||null;
+  r.time=document.getElementById('edit-time').value.trim()||null;
+  r.cuisine=document.getElementById('edit-cuisine').value.trim()||null;
+  r.category=document.getElementById('edit-cat').value;
+  r.ingredients=getEditListValues('edit-ings-list');
+  r.steps=getEditListValues('edit-steps-list');
+  r.notes=document.getElementById('edit-notes').value.trim()||null;
+  r.savedAt=new Date().toISOString();
+  save();
+  exitEditMode();
+  showDetail(rid);
+  buildChips();render();
+}
+
+function cancelEdit(){
+  exitEditMode();
+}
+
+function exitEditMode(){
+  editMode=false;
+  document.getElementById('ddet-view').style.display='block';
+  document.getElementById('ddet-edit').style.display='none';
+  document.getElementById('dhero-refresh').style.display='none';
+  document.getElementById('dedit-ico').setAttribute('stroke','#4A9090');
+  document.querySelector('#sdet .sa').scrollTop=0;
+}
+
 function showDetail(id){
   rid=id;const r=recs.find(x=>x.id===id);if(!r)return;
+  exitEditMode();
   go('detail');
   document.getElementById('dnav').textContent=r.title;
   document.getElementById('dtitle').textContent=r.title;
@@ -597,6 +753,7 @@ function postCmt(){const el=document.getElementById('cmtinp');const tx=el.value.
 function delCmt(cid){const r=recs.find(x=>x.id===rid);if(!r)return;r.comments=(r.comments||[]).filter(c=>c.id!==cid);renderCmts(r);save();}
 function fmtDate(iso){const d=new Date(iso);return d.toLocaleDateString('en-NZ',{day:'numeric',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-NZ',{hour:'2-digit',minute:'2-digit'});}
 async function delRecipe(){if(!confirm('Delete this recipe?'))return;recs=recs.filter(r=>r.id!==rid);save();go('main');}
+
 
 function resetAdd(){
   mode='p';fb64=null;dtxt=null;pendingRec=null;
