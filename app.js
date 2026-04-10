@@ -644,35 +644,57 @@ async function showImgPicker(query){
   modal.style.display='flex';
   grid.style.display='none';grid.innerHTML='';
   loading.style.display='block';none.style.display='none';
-  subtitle.textContent='Searching for: '+query;
+  subtitle.textContent='AI is searching for: '+query;
 
-  // Build candidate URLs: TheMealDB real photos first, then AI-generated via Pollinations
-  const candidates=[];
+  let urls=[];
 
-  // 1. TheMealDB — real photos for named dishes
-  try{
-    const r=await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(query)}`);
-    const d=await r.json();
-    if(d.meals)d.meals.slice(0,2).forEach(m=>{if(m.strMealThumb)candidates.push(m.strMealThumb);});
-  }catch(e){}
+  // 1. Try Groq compound-beta — uses built-in web search to find real food images
+  const key=getKey();
+  if(key){
+    try{
+      const resp=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},
+        body:JSON.stringify({
+          model:'compound-beta-mini',
+          messages:[{role:'user',content:`Search the web and find 6 high-quality food photography image URLs for the dish: "${query}". Look on recipe sites, food blogs, and cooking websites. Return ONLY a raw JSON array of direct image URLs (ending in .jpg .jpeg .png or .webp). No markdown, no explanation, just the JSON array. Example format: ["https://example.com/image.jpg","https://..."]`}],
+          max_tokens:600
+        })
+      });
+      const data=await resp.json();
+      const text=data.choices?.[0]?.message?.content||'';
+      const match=text.match(/\[[\s\S]*?\]/);
+      if(match){
+        const parsed=JSON.parse(match[0]);
+        urls=parsed.filter(u=>typeof u==='string'&&u.startsWith('http'));
+      }
+    }catch(e){}
+  }
 
-  // 2. Pollinations.ai — AI food photography with varied seeds
-  const prompt=encodeURIComponent(`professional food photography of ${query}, appetizing dish, restaurant quality, soft natural lighting, no text, no watermarks, no people`);
-  for(let seed=1;candidates.length+seed<=7;seed++){
-    candidates.push(`https://image.pollinations.ai/prompt/${prompt}?width=600&height=400&seed=${seed*37}&nologo=true&enhance=true`);
+  // 2. Fallback — MealDB real photos + Pollinations AI generation
+  if(urls.length<3){
+    try{
+      const r=await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(query)}`);
+      const d=await r.json();
+      if(d.meals)d.meals.slice(0,2).forEach(m=>{if(m.strMealThumb&&!urls.includes(m.strMealThumb))urls.unshift(m.strMealThumb);});
+    }catch(e){}
+    const prompt=encodeURIComponent(`professional food photography of ${query}, appetizing, restaurant quality, soft natural lighting, no text, no watermarks`);
+    for(let s=1;urls.length+s<=7;s++){
+      urls.push(`https://image.pollinations.ai/prompt/${prompt}?width=600&height=400&seed=${s*41}&nologo=true`);
+    }
   }
 
   loading.style.display='none';
+  const slots=urls.slice(0,6);
+  if(!slots.length){none.style.display='block';return;}
   grid.style.display='grid';
 
-  candidates.slice(0,6).forEach(src=>{
+  slots.forEach(src=>{
     const wrap=document.createElement('div');
-    wrap.style.cssText='position:relative;border-radius:12px;overflow:hidden;height:130px;cursor:pointer;border:3px solid transparent;transition:border-color 0.15s;background:linear-gradient(90deg,#c8dede 25%,#d8eaea 50%,#c8dede 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;';
+    wrap.style.cssText='border-radius:12px;overflow:hidden;height:130px;cursor:pointer;border:3px solid transparent;transition:border-color 0.15s;background:linear-gradient(90deg,#c8dede 25%,#d8eaea 50%,#c8dede 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;';
     const img=new Image();
-    img.onload=()=>{
-      wrap.style.animation='';wrap.style.backgroundSize='';wrap.style.background='';
-      wrap.innerHTML=`<img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;"/>`;
-    };
+    img.crossOrigin='anonymous';
+    img.onload=()=>{wrap.style.cssText='border-radius:12px;overflow:hidden;height:130px;cursor:pointer;border:3px solid transparent;transition:border-color 0.15s;';wrap.innerHTML=`<img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;"/>`;};
     img.onerror=()=>{wrap.style.display='none';};
     img.src=src;
     wrap.onclick=()=>selectPickerImage(src);
@@ -773,53 +795,10 @@ async function genFoodImage(id,title){
   }catch(e){clearHeroShimmer(id,r.emoji,catColor(r.category));}
 }
 
-// PWA — generate PNG icon via canvas (works for apple-touch-icon and manifest)
-function genIconPng(size){
-  const c=document.createElement('canvas');c.width=size;c.height=size;
-  const x=c.getContext('2d'),cx=size/2,cy=size/2,r=size/2;
-  x.fillStyle='#2A8A8A';x.beginPath();x.arc(cx,cy,r,0,Math.PI*2);x.fill();
-  x.strokeStyle='#5AACAC';x.lineWidth=size*0.016;
-  x.beginPath();x.arc(cx,cy,r*0.72,0,Math.PI*2);x.stroke();
-  x.fillStyle='#1A6060';x.beginPath();x.arc(cx,cy,r*0.60,0,Math.PI*2);x.fill();
-  x.fillStyle='#E0F2F2';x.font=`bold ${Math.round(size*0.40)}px Georgia,serif`;
-  x.textAlign='center';x.textBaseline='middle';x.fillText('C',cx,cy+size*0.04);
-  return c.toDataURL('image/png');
+// PWA — register real service worker file
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
 }
-(function(){
-  const icon192=genIconPng(192);
-  const icon512=genIconPng(512);
-  // Set apple-touch-icon so iOS home screen shows the C logo
-  const ati=document.createElement('link');ati.rel='apple-touch-icon';ati.href=icon192;
-  document.head.appendChild(ati);
-  // Manifest with real PNG icons
-  const manifest={
-    name:'Cronjes Recipe Blog',short_name:'Cronjes',
-    description:'Your personal AI-powered recipe collection',
-    start_url:location.href,display:'standalone',
-    background_color:'#1A4A4A',theme_color:'#1A4A4A',orientation:'portrait',
-    icons:[
-      {src:icon192,sizes:'192x192',type:'image/png',purpose:'any'},
-      {src:icon512,sizes:'512x512',type:'image/png',purpose:'any maskable'}
-    ]
-  };
-  const mUrl='data:application/manifest+json,'+encodeURIComponent(JSON.stringify(manifest));
-  document.getElementById('pwa-manifest').href=mUrl;
-})();
-
-// PWA — service worker (inline via blob, scope set to page directory)
-(function(){
-  if(!('serviceWorker' in navigator))return;
-  const sw=`const CACHE='cronjes-v3';
-self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.add(self.location.href)).catch(()=>{}));});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
-self.addEventListener('fetch',e=>{if(e.request.mode==='navigate')e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{caches.open(CACHE).then(c=>c.put(e.request,res.clone()));return res;})));});`;
-  try{
-    const blob=new Blob([sw],{type:'application/javascript'});
-    const url=URL.createObjectURL(blob);
-    const scope=location.pathname.replace(/[^/]*$/,'') || '/';
-    navigator.serviceWorker.register(url,{scope}).catch(()=>{});
-  }catch(e){}
-})();
 
 // PWA — install prompt
 let _deferredInstall=null;
@@ -833,7 +812,7 @@ function showInstallBanner(platform){
     btn.style.display='inline-block';
     btn.onclick=async function(){if(!_deferredInstall)return;_deferredInstall.prompt();const res=await _deferredInstall.userChoice;if(res.outcome==='accepted')hideInstallBanner();_deferredInstall=null;};
   }else if(platform==='ios'){
-    msg.innerHTML='Install: tap <strong style="color:#7EE8E8">Share ↑</strong> then <strong style="color:#7EE8E8">"Add to Home Screen"</strong> — no browser bar!';
+    msg.innerHTML='Install: tap <strong style="color:#7EE8E8">Share ↑</strong> then <strong style="color:#7EE8E8">"Add to Home Screen"</strong>';
     btn.style.display='none';
   }else if(platform==='android-manual'){
     msg.innerHTML='Install: tap <strong style="color:#7EE8E8">⋮</strong> in Chrome → <strong style="color:#7EE8E8">"Add to Home Screen"</strong>';

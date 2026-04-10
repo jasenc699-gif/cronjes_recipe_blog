@@ -1,0 +1,25 @@
+{
+  "name": "Cronjes Recipe Blog",
+  "short_name": "Cronjes",
+  "description": "Your personal AI-powered recipe collection",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1A4A4A",
+  "theme_color": "#1A4A4A",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
