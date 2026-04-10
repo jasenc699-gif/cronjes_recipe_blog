@@ -239,12 +239,12 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
     <div class="sa">
       <div class="srch"><input id="srch" type="text" placeholder="Search recipes..." oninput="render()"/></div>
       <div class="cat-filter-row">
-        <div class="cat-filter-wrap">
-          <svg class="cat-filter-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-          <select id="catdrop" class="cat-filter-sel" onchange="filterCatDrop(this.value)">
+        <div class="cat-filter-wrap" onclick="document.getElementById('catdrop').focus()">
+          <svg class="cat-filter-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events:none;"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          <select id="catdrop" class="cat-filter-sel" onchange="filterCatDrop(this.value)" style="position:relative;z-index:1;">
             <option value="All">All Categories</option>
           </select>
-          <svg class="cat-filter-arr" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          <svg class="cat-filter-arr" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="pointer-events:none;"><path d="M6 9l6 6 6-6"/></svg>
         </div>
       </div>
       <div id="pall" class="rgrid"></div>
@@ -337,7 +337,12 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
       </button>
     </div>
     <div class="sa">
-      <div id="dhero" class="dhero">🍴</div>
+      <div style="position:relative;">
+        <div id="dhero" class="dhero">🍴</div>
+        <button id="dhero-refresh" onclick="refreshImage()" title="Search for a new image" style="position:absolute;bottom:9px;right:9px;background:rgba(26,60,60,0.72);border:none;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 2px 8px rgba(0,0,0,0.25);transition:background 0.15s;" onmouseenter="this.style.background='rgba(42,138,138,0.85)'" onmouseleave="this.style.background='rgba(26,60,60,0.72)'">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.3"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+      </div>
       <div class="dbody">
         <div class="dtitle" id="dtitle"></div>
         <div class="drow">
@@ -965,6 +970,14 @@ async function searchPollinations(title){
   const prompt=encodeURIComponent(`professional food photography of ${title}, appetizing, restaurant quality, soft natural lighting, top-down or 45-degree angle, no text`);
   const url=`https://image.pollinations.ai/prompt/${prompt}?width=600&height=400&nologo=true&seed=${Date.now()}`;
   return await tryLoadImage(url,15000);
+}
+
+async function refreshImage(){
+  const r=recs.find(x=>x.id===rid);if(!r)return;
+  r.imageData=null;save();
+  const h=document.getElementById('dhero');
+  h.innerHTML=r.emoji;h.style.background=catColor(r.category);h.style.minHeight='150px';h.style.animation='';
+  genFoodImage(rid,r.title);
 }
 
 async function genFoodImage(id,title){
