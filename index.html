@@ -4,8 +4,14 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Cronjes"/>
+<meta name="theme-color" content="#1A4A4A"/>
+<link id="pwa-manifest" rel="manifest" href=""/>
 <title>Cronjes Recipe Blog</title>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.7.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -130,6 +136,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 #loader{position:fixed;inset:0;background:rgba(253,246,236,0.95);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:200;gap:18px;}
 .spin{width:42px;height:42px;border:3px solid var(--bds);border-top-color:var(--tc);border-radius:50%;animation:sp 0.85s linear infinite;}
 @keyframes sp{to{transform:rotate(360deg);}}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 #loadmsg{font-size:15px;color:var(--mu);font-family:Arial,sans-serif;}
 
 /* SETTINGS */
@@ -163,6 +170,9 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 <div id="loader"><div class="spin"></div><p id="loadmsg">Extracting recipe...</p></div>
 
 <div id="app">
+
+  <!-- INSTALL BANNER -->
+  <div id="install-banner" style="display:none;background:#1A4A4A;color:#E0F2F2;padding:10px 14px;align-items:center;gap:10px;flex-shrink:0;z-index:50;"><span style="font-size:20px;">📲</span><span id="install-msg" style="flex:1;font-size:13px;font-family:Arial,sans-serif;line-height:1.4;"></span><button id="install-btn" style="display:none;background:#2A8A8A;color:white;border:none;border-radius:20px;padding:8px 14px;font-size:13px;font-family:Arial,sans-serif;cursor:pointer;white-space:nowrap;flex-shrink:0;">Install App</button><button onclick="document.getElementById('install-banner').style.display='none'" style="background:none;border:none;color:#5AACAC;font-size:22px;cursor:pointer;padding:0 0 0 4px;line-height:1;flex-shrink:0;">×</button></div>
 
   <!-- WELCOME -->
   <div id="swel" class="scr">
@@ -251,7 +261,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
       <div class="addopts">
         <div class="addopt on" id="op-p" onclick="selMode('p')"><span class="ico">📷</span><div class="lbl">Screenshot</div></div>
         <div class="addopt" id="op-u" onclick="selMode('u')"><span class="ico">🔗</span><div class="lbl">Website URL</div></div>
-        <div class="addopt" id="op-d" onclick="selMode('d')"><span class="ico">📄</span><div class="lbl">Word Doc</div></div>
+        <div class="addopt" id="op-d" onclick="selMode('d')"><span class="ico">📎</span><div class="lbl">Document</div></div>
       </div>
       <div id="sec-p" class="fsec">
         <label class="flbl">Recipe photo or screenshot</label>
@@ -264,9 +274,9 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
         <input type="url" class="finp" id="urlinp" placeholder="https://www.example.com/recipe"/>
       </div>
       <div id="sec-d" class="fsec" style="display:none">
-        <label class="flbl">Word document (.docx)</label>
-        <div class="upz" onclick="document.getElementById('dip').click()"><span class="ico">📄</span><p><strong>Tap to choose .docx file</strong><br>Select your Word recipe document</p></div>
-        <input type="file" id="dip" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onchange="onDoc(event)"/>
+        <label class="flbl">Word (.docx) or PDF document</label>
+        <div class="upz" onclick="document.getElementById('dip').click()"><span class="ico">📎</span><p><strong>Tap to choose a file</strong><br>Supports .docx Word documents and .pdf files</p></div>
+        <input type="file" id="dip" accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" onchange="onDoc(event)"/>
         <div id="docname" style="margin-top:10px;font-size:13px;font-family:Arial,sans-serif;color:var(--tc);display:none;"></div>
       </div>
       <div style="padding:0 14px;">
@@ -451,8 +461,9 @@ function setTab(t){
 
 function buildChips(){
   const used=[...new Set(recs.map(r=>r.category).filter(Boolean))];
-  document.getElementById('chipwrap').innerHTML='<span class="chip on" onclick="filterCat(\'All\',this)">All</span>'
-    +used.map(c=>`<span class="chip" onclick="filterCat('${c}',this)">${catEmoji(c)} ${c}</span>`).join('');
+  const allOn=catF==='All'?' on':'';
+  document.getElementById('chipwrap').innerHTML=`<span class="chip${allOn}" onclick="filterCat('All',this)">All</span>`
+    +used.map(c=>`<span class="chip${catF===c?' on':''}" onclick="filterCat('${c}',this)">${catEmoji(c)} ${c}</span>`).join('');
 }
 function filterCat(c,el){catF=c;document.querySelectorAll('#chipwrap .chip').forEach(x=>x.classList.remove('on'));el.classList.add('on');render();}
 
@@ -481,7 +492,15 @@ function renderCats(){
   allCats().forEach(c=>{
     const n=recs.filter(r=>r.category===c).length;
     const d=document.createElement('div');d.className='ccard';
-    d.onclick=()=>{catF=c;setTab('a');buildChips();};
+    d.onclick=()=>{
+      catF=c;tab='a';
+      ['a','f','c'].forEach(x=>document.getElementById('nt-'+x).classList.toggle('on',x==='a'));
+      document.getElementById('pall').style.display='grid';
+      document.getElementById('pfav').style.display='none';
+      document.getElementById('pcat').style.display='none';
+      document.querySelector('.srch').style.display='block';
+      buildChips();render();
+    };
     d.innerHTML=`<span class="cico">${catEmoji(c)}</span><div class="cname">${c}</div><div class="ccnt">${n} recipe${n!==1?'s':''}</div>`;
     p.appendChild(d);
   });
@@ -560,9 +579,29 @@ function onImg(e){
 }
 async function onDoc(e){
   const f=e.target.files[0];if(!f)return;
-  if(typeof mammoth==='undefined'){showErr('Document reader still loading. Try again.');return;}
-  try{const buf=await f.arrayBuffer();const res=await mammoth.extractRawText({arrayBuffer:buf});dtxt=res.value.replace(/\n{3,}/g,'\n\n').trim();const dn=document.getElementById('docname');dn.textContent='✓ '+f.name;dn.style.display='block';}
-  catch(er){showErr('Could not read this Word document.');}
+  const dn=document.getElementById('docname');
+  const isPdf=f.name.toLowerCase().endsWith('.pdf')||f.type==='application/pdf';
+  if(isPdf){
+    if(typeof pdfjsLib==='undefined'){showErr('PDF reader still loading. Please try again in a moment.');return;}
+    try{
+      pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const buf=await f.arrayBuffer();
+      const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+      let text='';
+      for(let i=1;i<=Math.min(pdf.numPages,20);i++){
+        const page=await pdf.getPage(i);
+        const content=await page.getTextContent();
+        text+=content.items.map(it=>it.str).join(' ')+'\n';
+      }
+      dtxt=text.replace(/\n{3,}/g,'\n\n').trim();
+      if(!dtxt){showErr('Could not extract text from this PDF. Try a Word document instead.');return;}
+      dn.textContent='✓ '+f.name+' ('+pdf.numPages+' page'+(pdf.numPages!==1?'s':'')+'  · PDF)';dn.style.display='block';
+    }catch(er){showErr('Could not read this PDF. ('+(er.message||er)+')');}
+  } else {
+    if(typeof mammoth==='undefined'){showErr('Document reader still loading. Try again.');return;}
+    try{const buf=await f.arrayBuffer();const res=await mammoth.extractRawText({arrayBuffer:buf});dtxt=res.value.replace(/\n{3,}/g,'\n\n').trim();dn.textContent='✓ '+f.name;dn.style.display='block';}
+    catch(er){showErr('Could not read this Word document.');}
+  }
 }
 
 // CATEGORY MANAGER
@@ -791,25 +830,150 @@ function confirmSave(){
   if(!hasPhoto)genFoodImage(savedId,savedTitle);
 }
 
-async function genFoodImage(id,title){
-  try{
-    const prompt=encodeURIComponent(`professional food photography of ${title}, appetizing, restaurant quality, soft lighting, top down or 45 degree angle`);
-    const url=`https://image.pollinations.ai/prompt/${prompt}?width=600&height=400&nologo=true&seed=${Date.now()}`;
-    // Pre-load image to confirm it works before storing
-    await new Promise((res,rej)=>{const i=new Image();i.onload=res;i.onerror=rej;i.src=url;});
-    const r=recs.find(x=>x.id===id);
-    if(r&&!r.imageData){
-      r.imageData=url;save();
-      // Refresh hero if still on this detail screen
-      if(rid===id){
-        const h=document.getElementById('dhero');
-        h.innerHTML=`<img src="${url}"/>`;h.style.minHeight='';
-      }
-      // Refresh grid card
-      buildChips();render();
-    }
-  }catch(e){/* silent fail - emoji stays */}
+// ── Image search pipeline ─────────────────────────────────────────────────
+// Shows a shimmer on the detail hero while searching, then tries three sources.
+// 1. TheMealDB  — real food photos, free, no key required
+// 2. Groq web search — uses existing API key to find a real photo URL
+// 3. Pollinations.ai — AI-generated fallback
+
+function setHeroShimmer(id){
+  if(rid!==id)return;
+  const h=document.getElementById('dhero');
+  h.innerHTML='';
+  h.style.minHeight='160px';
+  h.style.background='linear-gradient(90deg,#c8dede 25%,#d8eaea 50%,#c8dede 75%)';
+  h.style.backgroundSize='200% 100%';
+  h.style.animation='shimmer 1.4s infinite';
 }
+function clearHeroShimmer(id,emoji,color){
+  if(rid!==id)return;
+  const h=document.getElementById('dhero');
+  h.style.animation='';h.style.background=color;h.innerHTML=emoji;
+}
+function applyHeroImage(id,url){
+  const r=recs.find(x=>x.id===id);if(!r||r.imageData)return;
+  r.imageData=url;save();
+  if(rid===id){const h=document.getElementById('dhero');h.style.animation='';h.innerHTML=`<img src="${url}"/>`;h.style.minHeight='';}
+  buildChips();render();
+}
+
+async function tryLoadImage(url,timeoutMs=8000){
+  return new Promise((res,rej)=>{
+    const t=setTimeout(()=>rej(new Error('timeout')),timeoutMs);
+    const i=new Image();
+    i.onload=()=>{clearTimeout(t);res(url);};
+    i.onerror=()=>{clearTimeout(t);rej(new Error('load failed'));};
+    i.src=url;
+  });
+}
+
+async function searchMealDB(title){
+  // Try full title, then first two words
+  const queries=[title.trim(), title.trim().split(/\s+/).slice(0,2).join(' ')];
+  for(const q of queries){
+    try{
+      const r=await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(q)}`);
+      const d=await r.json();
+      if(d.meals?.[0]?.strMealThumb){
+        const url=d.meals[0].strMealThumb;
+        return await tryLoadImage(url);
+      }
+    }catch(e){}
+  }
+  return null;
+}
+
+async function searchViaGroq(title){
+  const key=getKey();if(!key)return null;
+  try{
+    const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify({
+        model:'compound-beta-mini',
+        max_tokens:200,
+        messages:[{role:'user',content:`Find a direct URL to a high-quality food photo of "${title}". Reply with ONLY the image URL — no other text. The URL must be a direct image link ending in .jpg, .jpeg, .png, or .webp.`}]
+      })
+    });
+    const d=await res.json();if(d.error)return null;
+    const text=(d.choices?.[0]?.message?.content||'').trim();
+    const match=text.match(/https?:\/\/[^\s<>"]+\.(?:jpg|jpeg|png|webp)(\?[^\s<>"]*)?/i);
+    if(!match)return null;
+    return await tryLoadImage(match[0],10000);
+  }catch(e){return null;}
+}
+
+async function searchPollinations(title){
+  const prompt=encodeURIComponent(`professional food photography of ${title}, appetizing, restaurant quality, soft natural lighting, top-down or 45-degree angle, no text`);
+  const url=`https://image.pollinations.ai/prompt/${prompt}?width=600&height=400&nologo=true&seed=${Date.now()}`;
+  return await tryLoadImage(url,15000);
+}
+
+async function genFoodImage(id,title){
+  const r=recs.find(x=>x.id===id);if(!r||r.imageData)return;
+  setHeroShimmer(id);
+  try{
+    // Source 1: TheMealDB real photos
+    let url=await searchMealDB(title).catch(()=>null);
+    // Source 2: Groq web search
+    if(!url)url=await searchViaGroq(title).catch(()=>null);
+    // Source 3: Pollinations AI fallback
+    if(!url)url=await searchPollinations(title).catch(()=>null);
+    if(url)applyHeroImage(id,url);
+    else clearHeroShimmer(id,r.emoji,catColor(r.category));
+  }catch(e){clearHeroShimmer(id,r.emoji,catColor(r.category));}
+}
+
+
+// PWA — inject manifest as data URI
+(function(){
+  const iconSvg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="100" fill="#2A8A8A"/><circle cx="100" cy="100" r="72" fill="none" stroke="#5AACAC" stroke-width="3"/><circle cx="100" cy="100" r="60" fill="#1A6060"/><g transform="translate(68,44)"><rect x="4" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="10" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="16" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="5" y="22" width="13" height="3" rx="1.5" fill="#E0F2F2"/><rect x="10" y="25" width="3" height="68" rx="1.5" fill="#E0F2F2"/></g><text x="100" y="116" text-anchor="middle" font-family="Georgia,serif" font-size="48" font-weight="bold" fill="#E0F2F2">C</text></svg>';
+  const iconUrl='data:image/svg+xml;base64,'+btoa(iconSvg);
+  const manifest={name:'Cronjes Recipe Blog',short_name:'Cronjes',description:'Your personal AI-powered recipe collection',start_url:location.href,display:'standalone',background_color:'#1A4A4A',theme_color:'#1A4A4A',orientation:'portrait',icons:[{src:iconUrl,sizes:'any',type:'image/svg+xml',purpose:'any maskable'}]};
+  const mUrl='data:application/manifest+json,'+encodeURIComponent(JSON.stringify(manifest));
+  document.getElementById('pwa-manifest').href=mUrl;
+})();
+
+// PWA — register service worker via blob for offline caching
+(function(){
+  if(!('serviceWorker' in navigator))return;
+  const sw=`const CACHE='cronjes-v1';self.addEventListener('install',e=>{self.skipWaiting();});self.addEventListener('activate',e=>{self.clients.claim();});self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});`;
+  try{
+    const blob=new Blob([sw],{type:'application/javascript'});
+    navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
+  }catch(e){}
+})();
+
+// PWA — Android/Chrome install prompt
+let _deferredInstall=null;
+window.addEventListener('beforeinstallprompt',function(e){
+  e.preventDefault();_deferredInstall=e;
+  const banner=document.getElementById('install-banner');
+  const btn=document.getElementById('install-btn');
+  document.getElementById('install-msg').textContent='Add Cronjes to your home screen for the best experience.';
+  btn.style.display='inline-block';
+  btn.onclick=async function(){
+    if(!_deferredInstall)return;
+    _deferredInstall.prompt();
+    const r=await _deferredInstall.userChoice;
+    if(r.outcome==='accepted')banner.style.display='none';
+    _deferredInstall=null;
+  };
+  banner.style.display='flex';
+});
+window.addEventListener('appinstalled',function(){document.getElementById('install-banner').style.display='none';});
+
+// PWA — iOS Safari "Add to Home Screen" hint
+(function(){
+  const isIos=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  const standalone=window.navigator.standalone===true;
+  if(isIos&&!standalone&&!sessionStorage.getItem('ios-hint-done')){
+    const banner=document.getElementById('install-banner');
+    document.getElementById('install-msg').innerHTML='To install: tap the <strong style="color:white">Share</strong> button then <strong style="color:white">"Add to Home Screen"</strong>';
+    banner.style.display='flex';
+    banner.querySelector('button:last-child').addEventListener('click',function(){sessionStorage.setItem('ios-hint-done','1');},{once:true});
+  }
+})();
 
 document.addEventListener('DOMContentLoaded', function(){
   try{ load(); }
