@@ -259,6 +259,13 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
       <div id="pall" class="rgrid"></div>
       <div id="pfav" class="rgrid" style="display:none"></div>
       <div id="pcat" class="cgrid" style="display:none"></div>
+      <div id="pcat-detail" style="display:none;flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:4px;padding:10px 14px 4px;">
+          <button onclick="closeCatDetail()" style="background:none;border:none;color:var(--tc);font-size:28px;cursor:pointer;padding:0;line-height:1;min-width:44px;min-height:44px;display:flex;align-items:center;">‹</button>
+          <span id="pcat-detail-title" style="font-size:18px;color:var(--tx);"></span>
+        </div>
+        <div id="pcat-detail-grid" class="rgrid"></div>
+      </div>
       <div id="pempty" class="empty" style="display:none"><span class="eico">🍽️</span><p id="emptymsg">No recipes yet.<br>Tap + to add your first one!</p></div>
     </div>
     <nav id="botnav">
@@ -557,6 +564,7 @@ function setTab(t){
   document.getElementById('pall').style.display=t==='a'?'grid':'none';
   document.getElementById('pfav').style.display=t==='f'?'grid':'none';
   document.getElementById('pcat').style.display=t==='c'?'grid':'none';
+  document.getElementById('pcat-detail').style.display='none';
   document.querySelector('.srch').style.display=t==='c'?'none':'block';
   if(t==='c')renderCats();else render();
 }
@@ -594,21 +602,52 @@ function render(){
 
 function renderCats(){
   const p=document.getElementById('pcat');p.innerHTML='';
-  allCats().forEach(c=>{
+  document.getElementById('pcat-detail').style.display='none';
+  p.style.display='grid';
+  const usedCats=allCats().filter(c=>recs.some(r=>r.category===c));
+  if(!usedCats.length){
+    p.style.display='none';
+    const empty=document.getElementById('pempty');
+    empty.style.display='block';
+    document.getElementById('emptymsg').innerHTML='No recipes yet.<br>Tap + to add your first one!';
+    return;
+  }
+  document.getElementById('pempty').style.display='none';
+  usedCats.forEach(c=>{
     const n=recs.filter(r=>r.category===c).length;
     const d=document.createElement('div');d.className='ccard';
-    d.onclick=()=>{
-      catF=c;tab='a';
-      ['a','f','c'].forEach(x=>document.getElementById('nt-'+x).classList.toggle('on',x==='a'));
-      document.getElementById('pall').style.display='grid';
-      document.getElementById('pfav').style.display='none';
-      document.getElementById('pcat').style.display='none';
-      document.querySelector('.srch').style.display='block';
-      buildChips();render();
-    };
-    d.innerHTML=`<span class="cico">${catEmoji(c)}</span><div class="cname">${c}</div><div class="ccnt">${n} recipe${n!==1?'s':''}</div>`;
+    d.style.cssText=`background:${catColor(c)};border-color:transparent;`;
+    d.onclick=()=>openCatDetail(c);
+    d.innerHTML=`<span class="cico" style="font-size:36px;margin-bottom:10px;">${catEmoji(c)}</span><div class="cname" style="font-size:15px;font-weight:bold;">${c}</div><div class="ccnt">${n} recipe${n!==1?'s':''}</div>`;
     p.appendChild(d);
   });
+}
+
+function openCatDetail(c){
+  document.getElementById('pcat').style.display='none';
+  document.getElementById('pempty').style.display='none';
+  const det=document.getElementById('pcat-detail');
+  det.style.display='flex';
+  document.getElementById('pcat-detail-title').textContent=catEmoji(c)+' '+c;
+  const grid=document.getElementById('pcat-detail-grid');
+  grid.innerHTML='';
+  const list=recs.filter(r=>r.category===c);
+  if(!list.length){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:50px 24px;font-family:Arial,sans-serif;color:var(--mu);">No recipes in this category yet.</div>';
+    return;
+  }
+  list.forEach(r=>{
+    const card=document.createElement('div');card.className='rc';card.onclick=()=>showDetail(r.id);
+    const bg=catColor(r.category);
+    const img=r.imageData?`<div class="rc-img" style="padding:0;overflow:hidden"><img src="${r.imageData}" style="width:100%;height:110px;object-fit:cover;display:block"/></div>`:`<div class="rc-img" style="background:${bg}">${r.emoji}</div>`;
+    card.innerHTML=`${img}${r.favourite?'<div class="rc-star">⭐</div>':''}<div class="rc-body"><div class="rc-title">${r.title}</div><div class="rc-meta">${[r.time,r.servings].filter(Boolean).join(' · ')}</div></div>`;
+    grid.appendChild(card);
+  });
+}
+
+function closeCatDetail(){
+  document.getElementById('pcat-detail').style.display='none';
+  renderCats();
 }
 
 function toggleEditMode(){
