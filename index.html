@@ -1187,31 +1187,33 @@ async function showImgPicker(query){
   grid.style.display='none';grid.innerHTML='';
   loading.style.display='block';none.style.display='none';
   subtitle.textContent='Searching for: '+query;
-  // Load 6 images using Unsplash Source (different widths = different photos)
-  const encoded=encodeURIComponent(query+' food');
-  const sources=[
-    `https://source.unsplash.com/600x400/?${encoded}`,
-    `https://source.unsplash.com/601x400/?${encoded}`,
-    `https://source.unsplash.com/602x400/?${encoded}`,
-    `https://source.unsplash.com/603x400/?${encoded}`,
-    `https://source.unsplash.com/604x400/?${encoded}`,
-    `https://source.unsplash.com/605x400/?${encoded}`,
-  ];
+
+  // Build candidate URLs: TheMealDB real photos first, then AI-generated via Pollinations
+  const candidates=[];
+
+  // 1. TheMealDB — real photos for named dishes
+  try{
+    const r=await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(query)}`);
+    const d=await r.json();
+    if(d.meals)d.meals.slice(0,2).forEach(m=>{if(m.strMealThumb)candidates.push(m.strMealThumb);});
+  }catch(e){}
+
+  // 2. Pollinations.ai — AI food photography with varied seeds
+  const prompt=encodeURIComponent(`professional food photography of ${query}, appetizing dish, restaurant quality, soft natural lighting, no text, no watermarks, no people`);
+  for(let seed=1;candidates.length+seed<=7;seed++){
+    candidates.push(`https://image.pollinations.ai/prompt/${prompt}?width=600&height=400&seed=${seed*37}&nologo=true&enhance=true`);
+  }
+
   loading.style.display='none';
   grid.style.display='grid';
-  let loaded=0;
-  sources.forEach(src=>{
+
+  candidates.slice(0,6).forEach(src=>{
     const wrap=document.createElement('div');
-    wrap.style.cssText='position:relative;border-radius:12px;overflow:hidden;background:#dde;height:130px;cursor:pointer;border:3px solid transparent;transition:border-color 0.15s;';
-    // shimmer while loading
-    wrap.style.background='linear-gradient(90deg,#c8dede 25%,#d8eaea 50%,#c8dede 75%)';
-    wrap.style.backgroundSize='200% 100%';wrap.style.animation='shimmer 1.4s infinite';
+    wrap.style.cssText='position:relative;border-radius:12px;overflow:hidden;height:130px;cursor:pointer;border:3px solid transparent;transition:border-color 0.15s;background:linear-gradient(90deg,#c8dede 25%,#d8eaea 50%,#c8dede 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;';
     const img=new Image();
     img.onload=()=>{
-      wrap.style.animation='';wrap.style.backgroundSize='';
-      wrap.innerHTML=`<img src="${img.src}" style="width:100%;height:100%;object-fit:cover;display:block;"/>`;
-      loaded++;
-      if(loaded===0&&sources.every(_=>true))none.style.display='none';
+      wrap.style.animation='';wrap.style.backgroundSize='';wrap.style.background='';
+      wrap.innerHTML=`<img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;"/>`;
     };
     img.onerror=()=>{wrap.style.display='none';};
     img.src=src;
