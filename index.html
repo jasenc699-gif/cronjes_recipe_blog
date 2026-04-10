@@ -269,7 +269,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
       <div id="pempty" class="empty" style="display:none"><span class="eico">🍽️</span><p id="emptymsg">No recipes yet.<br>Tap + to add your first one!</p></div>
     </div>
     <nav id="botnav">
-      <button class="ntab on" id="nt-a" onclick="setTab('a')">
+      <button class="ntab" id="nt-a" onclick="setTab('a')">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="6" height="6" rx="1.5"/><rect x="12" y="2" width="6" height="6" rx="1.5"/><rect x="2" y="12" width="6" height="6" rx="1.5"/><rect x="12" y="12" width="6" height="6" rx="1.5"/></svg>
         All
       </button>
@@ -277,7 +277,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
         Favourites
       </button>
-      <button class="ntab" id="nt-c" onclick="setTab('c')">
+      <button class="ntab on" id="nt-c" onclick="setTab('c')">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>
         Categories
       </button>
@@ -402,9 +402,12 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 
         <label class="flbl" style="margin-top:10px;">Photo</label>
         <div id="edit-img-preview" style="width:100%;height:150px;border-radius:12px;overflow:hidden;background:var(--tcl);display:flex;align-items:center;justify-content:center;font-size:48px;margin-bottom:10px;"></div>
-        <div style="display:flex;gap:8px;margin-bottom:4px;">
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
           <button class="pbtn sec" style="flex:1;margin-top:0;padding:11px 8px;font-size:13px;font-family:Arial,sans-serif;" onclick="document.getElementById('edit-img-file').click()">📷 Upload Photo</button>
-          <button id="edit-search-img-btn" class="pbtn sec" style="flex:1;margin-top:0;padding:11px 8px;font-size:13px;font-family:Arial,sans-serif;" onclick="editSearchImage()">🔍 Search Image</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:4px;align-items:center;">
+          <input type="text" id="img-search-query" class="finp" placeholder="Type recipe name to search…" style="flex:1;margin:0;padding:11px 13px;font-size:13px;border-radius:10px;"/>
+          <button id="edit-search-img-btn" class="pbtn sec" style="width:auto;margin-top:0;padding:11px 14px;font-size:13px;font-family:Arial,sans-serif;white-space:nowrap;flex-shrink:0;" onclick="editSearchImage()">🔍 Search</button>
         </div>
         <input type="file" id="edit-img-file" accept="image/*" style="display:none" onchange="editOnImg(event)"/>
 
@@ -525,7 +528,7 @@ function saveCustomCats(arr){store.set(CK,JSON.stringify(arr));}
 function allCats(){return[...CATS,...getCustomCats().filter(c=>!CATS.includes(c))];}
 function catEmoji(c){return CE[c]||'🍴';}
 function catColor(c){return CC[c]||CUSTOMCC;}
-let recs=[],tab='a',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false,editPendingImg=undefined;
+let recs=[],tab='c',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false,editPendingImg=undefined;
 
 function load(){
   try{const v=store.get(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
@@ -554,7 +557,7 @@ function go(s){
   if(!el)return;
   el.classList.add('on');
   if(s==='add')resetAdd();
-  if(s==='main'){if(editMode)exitEditMode();buildChips();render();}
+  if(s==='main'){if(editMode)exitEditMode();buildChips();setTab('c');}
   if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();}
 }
 
@@ -665,6 +668,7 @@ function enterEditMode(){
   document.getElementById('edit-time').value=r.time||'';
   document.getElementById('edit-cuisine').value=r.cuisine||'';
   document.getElementById('edit-notes').value=r.notes||'';
+  const imgQ=document.getElementById('img-search-query');if(imgQ)imgQ.value=r.title||'';
   // Category
   const catSel=document.getElementById('edit-cat');
   catSel.innerHTML=allCats().map(c=>`<option value="${c}"${c===r.category?' selected':''}>${catEmoji(c)} ${c}</option>`).join('');
@@ -1116,16 +1120,18 @@ function editOnImg(e){
 }
 async function editSearchImage(){
   const btn=document.getElementById('edit-search-img-btn');
+  const queryInput=document.getElementById('img-search-query');
+  const typedQuery=queryInput?queryInput.value.trim():'';
+  const title=typedQuery||document.getElementById('edit-title').value.trim()||(recs.find(x=>x.id===rid)?.title||'food');
   btn.textContent='⏳ Searching…';btn.disabled=true;
-  const title=document.getElementById('edit-title').value.trim()||(recs.find(x=>x.id===rid)?.title||'food');
   try{
     let url=await searchMealDB(title).catch(()=>null);
     if(!url)url=await searchLoremFlickr(title).catch(()=>null);
     if(!url)url=await searchPollinations(title).catch(()=>null);
     if(url){editPendingImg=url;setEditImgPreview(url);}
-    else alert('Could not find an image. Try uploading your own photo.');
+    else alert('Could not find an image for "'+title+'". Try a different name or upload your own photo.');
   }catch(e){}
-  btn.textContent='🔍 Search Image';btn.disabled=false;
+  btn.textContent='🔍 Search';btn.disabled=false;
 }
 
 async function refreshImage(){
