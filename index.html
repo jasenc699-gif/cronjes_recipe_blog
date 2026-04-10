@@ -393,7 +393,15 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
       <div id="ddet-edit" style="display:none;padding:14px 16px 32px;">
         <div class="shd" style="margin-top:0;">Editing Recipe</div>
 
-        <label class="flbl" style="margin-top:10px;">Title</label>
+        <label class="flbl" style="margin-top:10px;">Photo</label>
+        <div id="edit-img-preview" style="width:100%;height:150px;border-radius:12px;overflow:hidden;background:var(--tcl);display:flex;align-items:center;justify-content:center;font-size:48px;margin-bottom:10px;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:4px;">
+          <button class="pbtn sec" style="flex:1;margin-top:0;padding:11px 8px;font-size:13px;font-family:Arial,sans-serif;" onclick="document.getElementById('edit-img-file').click()">📷 Upload Photo</button>
+          <button id="edit-search-img-btn" class="pbtn sec" style="flex:1;margin-top:0;padding:11px 8px;font-size:13px;font-family:Arial,sans-serif;" onclick="editSearchImage()">🔍 Search Image</button>
+        </div>
+        <input type="file" id="edit-img-file" accept="image/*" style="display:none" onchange="editOnImg(event)"/>
+
+        <label class="flbl" style="margin-top:14px;">Title</label>
         <input class="finp" type="text" id="edit-title" placeholder="Recipe name"/>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
@@ -510,7 +518,7 @@ function saveCustomCats(arr){store.set(CK,JSON.stringify(arr));}
 function allCats(){return[...CATS,...getCustomCats().filter(c=>!CATS.includes(c))];}
 function catEmoji(c){return CE[c]||'🍴';}
 function catColor(c){return CC[c]||CUSTOMCC;}
-let recs=[],tab='a',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false;
+let recs=[],tab='a',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false,editPendingImg=undefined;
 
 function load(){
   try{const v=store.get(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
@@ -609,7 +617,9 @@ function toggleEditMode(){
 
 function enterEditMode(){
   const r=recs.find(x=>x.id===rid);if(!r)return;
-  editMode=true;
+  editMode=true;editPendingImg=undefined;
+  // Image preview
+  setEditImgPreview(r.imageData||null,r);
   // Populate form
   document.getElementById('edit-title').value=r.title||'';
   document.getElementById('edit-servings').value=r.servings||'';
@@ -682,6 +692,7 @@ function saveEdit(){
   r.ingredients=getEditListValues('edit-ings-list');
   r.steps=getEditListValues('edit-steps-list');
   r.notes=document.getElementById('edit-notes').value.trim()||null;
+  if(editPendingImg!==undefined)r.imageData=editPendingImg;
   r.savedAt=new Date().toISOString();
   save();
   exitEditMode();
@@ -1051,9 +1062,44 @@ function confirmSave(){
 }
 
 // ── Image search pipeline ─────────────────────────────────────────────────
-// Shows a shimmer on the detail hero while searching, then tries three sources.
-// 1. TheMealDB  — real food photos, free, no key required
-// 2. Groq web search — uses existing API key to find a real photo URL
+// ── Edit-mode image helpers ───────────────────────────────────────────────
+function setEditImgPreview(src,r){
+  const el=document.getElementById('edit-img-preview');
+  if(!el)return;
+  if(src){el.innerHTML=`<img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;">`;}
+  else{const rec=r||recs.find(x=>x.id===rid);el.style.background=catColor(rec?.category);el.innerHTML=`<span style="font-size:48px;">${rec?.emoji||'🍴'}</span>`;}
+}
+function editOnImg(e){
+  const f=e.target.files[0];if(!f)return;
+  if(f.size>8388608){alert('Image too large (max 8MB)');return;}
+  const rd=new FileReader();rd.onload=ev=>{editPendingImg=ev.target.result;setEditImgPreview(ev.target.result);};rd.readAsDataURL(f);
+  e.target.value='';
+}
+async function editSearchImage(){
+  const btn=document.getElementById('edit-search-img-btn');
+  btn.textContent='⏳ Searching…';btn.disabled=true;
+  const title=document.getElementById('edit-title').value.trim()||(recs.find(x=>x.id===rid)?.title||'food');
+  try{
+    let url=await searchMealDB(title).catch(()=>null);
+    if(!url)url=await searchLoremFlickr(title).catch(()=>null);
+    if(!url)url=await searchPollinations(title).catch(()=>null);
+    if(url){editPendingImg=url;setEditImgPreview(url);}
+    else alert('Could not find an image. Try uploading your own photo.');
+  }catch(e){}
+  btn.textContent='🔍 Search Image';btn.disabled=false;
+}
+
+async function refreshImage(){
+  const r=recs.find(x=>x.id===rid);if(!r)return;
+  r.imageData=null;save();
+  const h=document.getElementById('dhero');
+  h.innerHTML=r.emoji;h.style.background=catColor(r.category);h.style.minHeight='150px';h.style.animation='';
+  genFoodImage(rid,r.title);
+}
+
+// ── Image search pipeline ─────────────────────────────────────────────────
+// 1. TheMealDB  — real food photos matched by dish name
+// 2. loremflickr — real Flickr photos searched by title keywords
 // 3. Pollinations.ai — AI-generated fallback
 
 function setHeroShimmer(id){
@@ -1080,7 +1126,7 @@ function applyHeroImage(id,url){
 async function tryLoadImage(url,timeoutMs=8000){
   return new Promise((res,rej)=>{
     const t=setTimeout(()=>rej(new Error('timeout')),timeoutMs);
-    const i=new Image();
+    const i=new Image();i.crossOrigin='anonymous';
     i.onload=()=>{clearTimeout(t);res(url);};
     i.onerror=()=>{clearTimeout(t);rej(new Error('load failed'));};
     i.src=url;
@@ -1088,118 +1134,119 @@ async function tryLoadImage(url,timeoutMs=8000){
 }
 
 async function searchMealDB(title){
-  // Try full title, then first two words
-  const queries=[title.trim(), title.trim().split(/\s+/).slice(0,2).join(' ')];
+  const queries=[title.trim(),title.trim().split(/\s+/).slice(0,2).join(' '),title.trim().split(/\s+/)[0]];
   for(const q of queries){
+    if(!q)continue;
     try{
       const r=await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(q)}`);
       const d=await r.json();
-      if(d.meals?.[0]?.strMealThumb){
-        const url=d.meals[0].strMealThumb;
-        return await tryLoadImage(url);
-      }
+      if(d.meals?.[0]?.strMealThumb)return await tryLoadImage(d.meals[0].strMealThumb);
     }catch(e){}
   }
   return null;
 }
 
-async function searchViaGroq(title){
-  const key=getKey();if(!key)return null;
-  try{
-    const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-      body:JSON.stringify({
-        model:'compound-beta-mini',
-        max_tokens:200,
-        messages:[{role:'user',content:`Find a direct URL to a high-quality food photo of "${title}". Reply with ONLY the image URL — no other text. The URL must be a direct image link ending in .jpg, .jpeg, .png, or .webp.`}]
-      })
-    });
-    const d=await res.json();if(d.error)return null;
-    const text=(d.choices?.[0]?.message?.content||'').trim();
-    const match=text.match(/https?:\/\/[^\s<>"]+\.(?:jpg|jpeg|png|webp)(\?[^\s<>"]*)?/i);
-    if(!match)return null;
-    return await tryLoadImage(match[0],10000);
-  }catch(e){return null;}
+async function searchLoremFlickr(title){
+  // Use first 1-2 meaningful words as search terms alongside "food"
+  const words=title.trim().split(/\s+/).slice(0,2).map(w=>w.replace(/[^a-z0-9]/gi,'')).filter(Boolean);
+  const keyword=words.length?words.join(','):'food';
+  const url=`https://loremflickr.com/600/400/${encodeURIComponent(keyword)},food?lock=${Math.floor(Math.random()*10000)}`;
+  return await tryLoadImage(url,12000);
 }
 
 async function searchPollinations(title){
-  const prompt=encodeURIComponent(`professional food photography of ${title}, appetizing, restaurant quality, soft natural lighting, top-down or 45-degree angle, no text`);
+  const prompt=encodeURIComponent(`professional food photography of "${title}", appetizing dish, restaurant quality, soft natural lighting, top-down or 45-degree angle view, no text, no watermarks`);
   const url=`https://image.pollinations.ai/prompt/${prompt}?width=600&height=400&nologo=true&seed=${Date.now()}`;
-  return await tryLoadImage(url,15000);
-}
-
-async function refreshImage(){
-  const r=recs.find(x=>x.id===rid);if(!r)return;
-  r.imageData=null;save();
-  const h=document.getElementById('dhero');
-  h.innerHTML=r.emoji;h.style.background=catColor(r.category);h.style.minHeight='150px';h.style.animation='';
-  genFoodImage(rid,r.title);
+  return await tryLoadImage(url,18000);
 }
 
 async function genFoodImage(id,title){
   const r=recs.find(x=>x.id===id);if(!r||r.imageData)return;
   setHeroShimmer(id);
   try{
-    // Source 1: TheMealDB real photos
     let url=await searchMealDB(title).catch(()=>null);
-    // Source 2: Groq web search
-    if(!url)url=await searchViaGroq(title).catch(()=>null);
-    // Source 3: Pollinations AI fallback
+    if(!url)url=await searchLoremFlickr(title).catch(()=>null);
     if(!url)url=await searchPollinations(title).catch(()=>null);
     if(url)applyHeroImage(id,url);
     else clearHeroShimmer(id,r.emoji,catColor(r.category));
   }catch(e){clearHeroShimmer(id,r.emoji,catColor(r.category));}
 }
 
-
-// PWA — inject manifest as data URI
+// PWA — generate PNG icon via canvas (works for apple-touch-icon and manifest)
+function genIconPng(size){
+  const c=document.createElement('canvas');c.width=size;c.height=size;
+  const x=c.getContext('2d'),cx=size/2,cy=size/2,r=size/2;
+  x.fillStyle='#2A8A8A';x.beginPath();x.arc(cx,cy,r,0,Math.PI*2);x.fill();
+  x.strokeStyle='#5AACAC';x.lineWidth=size*0.016;
+  x.beginPath();x.arc(cx,cy,r*0.72,0,Math.PI*2);x.stroke();
+  x.fillStyle='#1A6060';x.beginPath();x.arc(cx,cy,r*0.60,0,Math.PI*2);x.fill();
+  x.fillStyle='#E0F2F2';x.font=`bold ${Math.round(size*0.40)}px Georgia,serif`;
+  x.textAlign='center';x.textBaseline='middle';x.fillText('C',cx,cy+size*0.04);
+  return c.toDataURL('image/png');
+}
 (function(){
-  const iconSvg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="100" fill="#2A8A8A"/><circle cx="100" cy="100" r="72" fill="none" stroke="#5AACAC" stroke-width="3"/><circle cx="100" cy="100" r="60" fill="#1A6060"/><g transform="translate(68,44)"><rect x="4" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="10" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="16" y="0" width="3" height="22" rx="1.5" fill="#E0F2F2"/><rect x="5" y="22" width="13" height="3" rx="1.5" fill="#E0F2F2"/><rect x="10" y="25" width="3" height="68" rx="1.5" fill="#E0F2F2"/></g><text x="100" y="116" text-anchor="middle" font-family="Georgia,serif" font-size="48" font-weight="bold" fill="#E0F2F2">C</text></svg>';
-  const iconUrl='data:image/svg+xml;base64,'+btoa(iconSvg);
-  const manifest={name:'Cronjes Recipe Blog',short_name:'Cronjes',description:'Your personal AI-powered recipe collection',start_url:location.href,display:'standalone',background_color:'#1A4A4A',theme_color:'#1A4A4A',orientation:'portrait',icons:[{src:iconUrl,sizes:'any',type:'image/svg+xml',purpose:'any maskable'}]};
+  const icon192=genIconPng(192);
+  const icon512=genIconPng(512);
+  // Set apple-touch-icon so iOS home screen shows the C logo
+  const ati=document.createElement('link');ati.rel='apple-touch-icon';ati.href=icon192;
+  document.head.appendChild(ati);
+  // Manifest with real PNG icons
+  const manifest={
+    name:'Cronjes Recipe Blog',short_name:'Cronjes',
+    description:'Your personal AI-powered recipe collection',
+    start_url:location.href,display:'standalone',
+    background_color:'#1A4A4A',theme_color:'#1A4A4A',orientation:'portrait',
+    icons:[
+      {src:icon192,sizes:'192x192',type:'image/png',purpose:'any'},
+      {src:icon512,sizes:'512x512',type:'image/png',purpose:'any maskable'}
+    ]
+  };
   const mUrl='data:application/manifest+json,'+encodeURIComponent(JSON.stringify(manifest));
   document.getElementById('pwa-manifest').href=mUrl;
 })();
 
-// PWA — register service worker via blob for offline caching
+// PWA — service worker
 (function(){
   if(!('serviceWorker' in navigator))return;
-  const sw=`const CACHE='cronjes-v1';self.addEventListener('install',e=>{self.skipWaiting();});self.addEventListener('activate',e=>{self.clients.claim();});self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});`;
-  try{
-    const blob=new Blob([sw],{type:'application/javascript'});
-    navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
-  }catch(e){}
+  const sw=`const CACHE='cronjes-v2';
+self.addEventListener('install',e=>{self.skipWaiting();});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
+self.addEventListener('fetch',e=>{if(e.request.destination==='document')e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});`;
+  try{const blob=new Blob([sw],{type:'application/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}catch(e){}
 })();
 
-// PWA — Android/Chrome install prompt
+// PWA — install prompt
 let _deferredInstall=null;
-window.addEventListener('beforeinstallprompt',function(e){
-  e.preventDefault();_deferredInstall=e;
+function hideInstallBanner(){document.getElementById('install-banner').style.display='none';}
+function showInstallBanner(platform){
   const banner=document.getElementById('install-banner');
+  const msg=document.getElementById('install-msg');
   const btn=document.getElementById('install-btn');
-  document.getElementById('install-msg').textContent='Add Cronjes to your home screen for the best experience.';
-  btn.style.display='inline-block';
-  btn.onclick=async function(){
-    if(!_deferredInstall)return;
-    _deferredInstall.prompt();
-    const r=await _deferredInstall.userChoice;
-    if(r.outcome==='accepted')banner.style.display='none';
-    _deferredInstall=null;
-  };
+  if(platform==='android-prompt'){
+    msg.textContent='Add Cronjes to your home screen for the best experience.';
+    btn.style.display='inline-block';
+    btn.onclick=async function(){if(!_deferredInstall)return;_deferredInstall.prompt();const res=await _deferredInstall.userChoice;if(res.outcome==='accepted')hideInstallBanner();_deferredInstall=null;};
+  }else if(platform==='ios'){
+    msg.innerHTML='Install: tap <strong style="color:#7EE8E8">Share ↑</strong> then <strong style="color:#7EE8E8">"Add to Home Screen"</strong> — no browser bar!';
+    btn.style.display='none';
+  }else if(platform==='android-manual'){
+    msg.innerHTML='Install: tap <strong style="color:#7EE8E8">⋮</strong> in Chrome → <strong style="color:#7EE8E8">"Add to Home Screen"</strong>';
+    btn.style.display='none';
+  }
   banner.style.display='flex';
-});
-window.addEventListener('appinstalled',function(){document.getElementById('install-banner').style.display='none';});
-
-// PWA — iOS Safari "Add to Home Screen" hint
+}
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();_deferredInstall=e;showInstallBanner('android-prompt');});
+window.addEventListener('appinstalled',hideInstallBanner);
 (function(){
   const isIos=/iphone|ipad|ipod/i.test(navigator.userAgent);
-  const standalone=window.navigator.standalone===true;
-  if(isIos&&!standalone&&!sessionStorage.getItem('ios-hint-done')){
-    const banner=document.getElementById('install-banner');
-    document.getElementById('install-msg').innerHTML='To install: tap the <strong style="color:white">Share</strong> button then <strong style="color:white">"Add to Home Screen"</strong>';
-    banner.style.display='flex';
-    banner.querySelector('button:last-child').addEventListener('click',function(){sessionStorage.setItem('ios-hint-done','1');},{once:true});
+  const isAndroid=/android/i.test(navigator.userAgent);
+  const standalone=window.navigator.standalone===true||window.matchMedia('(display-mode:standalone)').matches;
+  if(standalone)return;
+  if(isIos&&!sessionStorage.getItem('ios-hint')){
+    showInstallBanner('ios');
+    document.getElementById('install-banner').querySelector('button:last-child').addEventListener('click',function(){sessionStorage.setItem('ios-hint','1');hideInstallBanner();},{once:true});
+  }else if(isAndroid&&!sessionStorage.getItem('android-hint')){
+    setTimeout(()=>{if(!_deferredInstall&&!window.matchMedia('(display-mode:standalone)').matches){showInstallBanner('android-manual');sessionStorage.setItem('android-hint','1');document.getElementById('install-banner').querySelector('button:last-child').addEventListener('click',function(){hideInstallBanner();},{once:true});}},2500);
   }
 })();
 
