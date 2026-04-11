@@ -23,7 +23,11 @@ function load(){
   try{const v=store.get(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
   if(!store.get(WK))go('welcome');
   else if(!getKey())go('settings');
-  else{go('main');}
+  else{
+    // Restore last screen so app-switching doesn't lose your place
+    const last=sessionStorage.getItem('cronjes_screen')||'main';
+    go(last==='welcome'||last==='add'?'main':last);
+  }
 }
 function save(){try{store.set(SK,JSON.stringify(recs));}catch(e){}}
 function welcomeDone(){store.set(WK,'1');if(!getKey())go('settings');else{buildChips();render();go('main');}}
@@ -32,12 +36,19 @@ function getKey(){return store.get(KK)||'';}
 function saveKey(){
   const v=document.getElementById('keyinp').value.trim();
   if(!v.startsWith('gsk_')){alert('That doesn\'t look like a valid Groq key. It should start with gsk_');return;}
-  store.set(KK,v);
+  store.set(KK,v);store.remove('cronjes_keydraft');
   document.getElementById('keyinp').value='';
   showKinfo();alert('API key saved ✓');buildChips();render();go('main');
 }
 function clearKey(){if(!confirm('Remove saved API key?'))return;store.remove(KK);document.getElementById('kinfo').style.display='none';}
-function showKinfo(){document.getElementById('kinfo').style.display=getKey()?'block':'none';}
+function showKinfo(){
+  document.getElementById('kinfo').style.display=getKey()?'block':'none';
+  // Auto-save key field draft so switching apps doesn't lose it
+  const ki=document.getElementById('keyinp');
+  if(ki&&!ki._autoSave){ki._autoSave=true;ki.addEventListener('input',()=>store.set('cronjes_keydraft',ki.value.trim()));}
+  // Restore draft if no key saved yet
+  if(!getKey()){const d=store.get('cronjes_keydraft');if(d&&ki)ki.value=d;}
+}
 
 function go(s){
   const ids={main:'sm',add:'sadd',detail:'sdet',settings:'sset',welcome:'swel'};
@@ -45,6 +56,7 @@ function go(s){
   const el=document.getElementById(ids[s]);
   if(!el)return;
   el.classList.add('on');
+  sessionStorage.setItem('cronjes_screen',s);
   if(s==='add')resetAdd();
   if(s==='main'){if(editMode)exitEditMode();buildChips();setTab('c');}
   if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();}
@@ -433,11 +445,16 @@ const FBSK='cronjes_fbsecret'; // database secret
 const FBID='cronjes_fbsyncid'; // sync node name
 
 function loadSyncFields(){
-  const url=store.get(FBK)||'';
-  const sid=store.get(FBID)||'cronjes';
-  document.getElementById('jbkey').value='';
-  document.getElementById('jbbin').value=url;
+  const url=store.get(FBK)||store.get('cronjes_fburl_draft')||'';
+  const sid=store.get(FBID)||store.get('cronjes_fbsid_draft')||'cronjes';
+  // Restore typed-but-unsaved values from draft store
+  const urlEl=document.getElementById('jbbin');
+  const keyEl=document.getElementById('jbkey');
   const sidEl=document.getElementById('fbsyncid');
+  if(urlEl)urlEl.value=url;
+  if(keyEl)keyEl.value=''; // never show secret in field for security, but restore if draft exists
+  const secretDraft=store.get('cronjes_fbsecret_draft')||'';
+  if(keyEl&&secretDraft)keyEl.value=secretDraft;
   if(sidEl)sidEl.value=sid;
   const si=document.getElementById('syncinfo');
   const last=store.get('cronjes_lastsync');
@@ -445,15 +462,19 @@ function loadSyncFields(){
     si.textContent='Database: '+url.replace('https://','').split('.')[0]+(last?' · Last synced: '+new Date(last).toLocaleString('en-NZ',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'');
     si.style.display='block';
   }else{si.style.display='none';}
+  // Wire up auto-save on every keystroke so switching apps never loses input
+  if(urlEl&&!urlEl._autoSave){urlEl._autoSave=true;urlEl.addEventListener('input',()=>store.set('cronjes_fburl_draft',urlEl.value.trim()));}
+  if(keyEl&&!keyEl._autoSave){keyEl._autoSave=true;keyEl.addEventListener('input',()=>store.set('cronjes_fbsecret_draft',keyEl.value.trim()));}
+  if(sidEl&&!sidEl._autoSave){sidEl._autoSave=true;sidEl.addEventListener('input',()=>store.set('cronjes_fbsid_draft',sidEl.value.trim()));}
 }
 
 function saveSyncCreds(){
-  const url=document.getElementById('jbbin').value.trim().replace(/\/+$/,'');
-  const secret=document.getElementById('jbkey').value.trim();
-  const sid=(document.getElementById('fbsyncid')?.value||'cronjes').trim().replace(/[^a-zA-Z0-9_-]/g,'-')||'cronjes';
-  if(url)store.set(FBK,url);
-  if(secret)store.set(FBSK,secret);
-  store.set(FBID,sid);
+  const url=(document.getElementById('jbbin').value.trim()||store.get('cronjes_fburl_draft')||'').replace(/\/+$/,'');
+  const secret=document.getElementById('jbkey').value.trim()||store.get('cronjes_fbsecret_draft')||'';
+  const sid=((document.getElementById('fbsyncid')?.value||store.get('cronjes_fbsid_draft')||'cronjes').trim().replace(/[^a-zA-Z0-9_-]/g,'-'))||'cronjes';
+  if(url){store.set(FBK,url);store.remove('cronjes_fburl_draft');}
+  if(secret){store.set(FBSK,secret);store.remove('cronjes_fbsecret_draft');}
+  store.set(FBID,sid);store.remove('cronjes_fbsid_draft');
   return{url:url||store.get(FBK)||'',secret:secret||store.get(FBSK)||'',sid};
 }
 
