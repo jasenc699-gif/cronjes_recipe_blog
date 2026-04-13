@@ -484,13 +484,30 @@ function setSyncResult(msg,ok){
 }
 
 function mergeRecipes(local,remote){
-  const map=new Map();
+  // Pass 1: deduplicate by id — keep the most recently saved version
+  const idMap=new Map();
   [...remote,...local].forEach(r=>{
     if(!r||!r.id)return;
-    const existing=map.get(r.id);
-    if(!existing||(r.savedAt&&(!existing.savedAt||r.savedAt>existing.savedAt)))map.set(r.id,r);
+    const existing=idMap.get(r.id);
+    if(!existing||(r.savedAt&&(!existing.savedAt||r.savedAt>existing.savedAt)))idMap.set(r.id,r);
   });
-  return [...map.values()].sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
+
+  // Pass 2: deduplicate by normalised title — catches same recipe added on
+  // two devices before any sync (different ids, same title)
+  const titleMap=new Map();
+  for(const r of idMap.values()){
+    const key=(r.title||'').trim().toLowerCase();
+    if(!key)continue; // skip untitled — keep all
+    const existing=titleMap.get(key);
+    if(!existing||(r.savedAt&&(!existing.savedAt||r.savedAt>existing.savedAt)))titleMap.set(key,r);
+  }
+  // Preserve any untitled recipes that were id-deduped
+  for(const r of idMap.values()){
+    const key=(r.title||'').trim().toLowerCase();
+    if(!key)titleMap.set(r.id,r);
+  }
+
+  return [...titleMap.values()].sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
 }
 
 async function syncNow(){
@@ -516,12 +533,15 @@ async function syncNow(){
     });
     if(!pw.ok)throw new Error('Write failed: '+pw.status+' '+pw.statusText);
 
-    const added=merged.filter(m=>!recs.find(r=>r.id===m.id)).length;
+    const prevIds=new Set(recs.map(r=>r.id));
+    const added=merged.filter(m=>!prevIds.has(m.id)).length;
+    const totalUniqueIds=new Set([...recs.map(r=>r.id),...remoteRecs.map(r=>r.id)]).size;
+    const dupsSkipped=totalUniqueIds-merged.length;
     recs=merged;save();buildChips();
     if(tab==='c')renderCats();else render();
     store.set('cronjes_lastsync',new Date().toISOString());
     loadSyncFields();
-    setSyncResult(`✓ Synced! ${merged.length} recipe${merged.length!==1?'s':''} in collection.${added>0?'\n'+added+' new recipe'+(added!==1?'s':'')+' pulled from cloud.':''}`,true);
+    setSyncResult(`✓ Synced! ${merged.length} recipe${merged.length!==1?'s':''} in collection.${added>0?'\n'+added+' new recipe'+(added!==1?'s':'')+' pulled from cloud.':''}${dupsSkipped>0?'\n'+dupsSkipped+' duplicate'+(dupsSkipped!==1?'s':'')+' removed.':''}`,true);
   }catch(e){
     setSyncResult('Sync failed: '+(e.message||String(e))+'\n\nCheck your Database URL and secret are correct. Make sure your Firebase Realtime Database rules allow read/write.',false);
   }
