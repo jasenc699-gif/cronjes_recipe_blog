@@ -18,9 +18,38 @@ function saveCustomCats(arr){store.set(CK,JSON.stringify(arr));}
 function allCats(){return[...CATS,...getCustomCats().filter(c=>!CATS.includes(c))];}
 function catEmoji(c){return CE[c]||'🍴';}
 function catColor(c){return CC[c]||CUSTOMCC;}
-let recs=[],tab='c',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false,editPendingImg=undefined;
+let recs=[],tab='c',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false,editPendingImg=undefined,_editPendingImgData=null;
 let _openCat=null;
 let _prevTab='c',_prevCat=null;
+let multiSelectMode=false,selectedIds=new Set();
+
+// ── IndexedDB Image Store ─────────────────────────────────────────────────
+// Stores base64 image data separately from localStorage to avoid quota issues.
+// Recipes use imageData='__idb__' to signal their image lives here.
+const ImgStore=(function(){
+  let _db=null;
+  function _open(){
+    if(_db)return Promise.resolve(_db);
+    return new Promise((res,rej)=>{
+      try{
+        const req=indexedDB.open('cronjes_imgs',1);
+        req.onupgradeneeded=e=>e.target.result.createObjectStore('imgs');
+        req.onsuccess=e=>{_db=e.target.result;res(_db);};
+        req.onerror=()=>rej(req.error);
+      }catch(e){rej(e);}
+    });
+  }
+  async function get(id){
+    try{const db=await _open();return await new Promise((res)=>{const t=db.transaction('imgs','readonly');const r=t.objectStore('imgs').get(id);r.onsuccess=()=>res(r.result||null);r.onerror=()=>res(null);});}catch(e){return null;}
+  }
+  async function set(id,data){
+    try{const db=await _open();return await new Promise((res)=>{const t=db.transaction('imgs','readwrite');t.objectStore('imgs').put(data,id);t.oncomplete=()=>res(true);t.onerror=()=>res(false);});}catch(e){return false;}
+  }
+  async function del(id){
+    try{const db=await _open();return await new Promise((res)=>{const t=db.transaction('imgs','readwrite');t.objectStore('imgs').delete(id);t.oncomplete=()=>res(true);t.onerror=()=>res(false);});}catch(e){return false;}
+  }
+  return{get,set,del};
+})();
 
 function load(){
   // Try main key first; fall back to backup if missing or corrupt.
@@ -46,6 +75,8 @@ function load(){
     const last=sessionStorage.getItem('cronjes_screen')||'main';
     go(last==='welcome'||last==='add'?'main':last);
   }
+  // Migrate any legacy base64 images from localStorage → IndexedDB in background
+  migrateImagesToIdb();
 }
 function save(){
   // Write backup FIRST so if the app is killed mid-write on the main key,
@@ -79,6 +110,19 @@ function save(){
 }
 function welcomeDone(){store.set(WK,'1');if(!getKey())go('settings');else{buildChips();render();go('main');}}
 
+async function migrateImagesToIdb(){
+  // Move any base64 images still in localStorage → IndexedDB in background.
+  // Frees up localStorage quota so images are never silently stripped on save.
+  const toMigrate=recs.filter(r=>r.imageData&&r.imageData.startsWith('data:'));
+  if(!toMigrate.length)return;
+  let migrated=0;
+  for(const r of toMigrate){
+    const ok=await ImgStore.set(r.id,r.imageData);
+    if(ok){r.imageData='__idb__';migrated++;}
+  }
+  if(migrated>0){save();console.log('cronjes: migrated '+migrated+' image(s) to IndexedDB');}
+}
+
 function getKey(){return store.get(KK)||'';}
 function saveKey(){
   const v=document.getElementById('keyinp').value.trim();
@@ -105,7 +149,7 @@ function go(s){
   el.classList.add('on');
   sessionStorage.setItem('cronjes_screen',s);
   if(s==='add')resetAdd();
-  if(s==='main'){if(editMode)exitEditMode();buildChips();setTab('c');}
+  if(s==='main'){if(editMode)exitEditMode();if(multiSelectMode)exitMultiSelect(true);buildChips();setTab('c');}
   if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();renderStorageBar();}
 }
 
@@ -132,21 +176,82 @@ function filterCatDrop(val){catF=val;render();}
 function filterCat(c){catF=c;buildChips();render();}
 
 function makeRecipeCard(r, showCat){
-  const card=document.createElement('div');card.className='rc';card.onclick=()=>showDetail(r.id);
+  const card=document.createElement('div');
+  const isSelected=multiSelectMode&&selectedIds.has(r.id);
+  card.className='rc'+(isSelected?' ms-selected':'');
+  if(multiSelectMode){card.onclick=()=>toggleSelect(r.id);}
+  else{card.onclick=()=>showDetail(r.id);}
   const bg=catColor(r.category);
-  const img=r.imageData?`<div class="rc-img" style="padding:0;overflow:hidden"><img src="${r.imageData}" style="width:100%;height:110px;object-fit:cover;display:block"/></div>`:`<div class="rc-img" style="background:${bg}">${r.emoji}</div>`;
+  const isIdb=r.imageData==='__idb__';
+  const img=(r.imageData&&!isIdb)
+    ?`<div class="rc-img" style="padding:0;overflow:hidden"><img src="${r.imageData}" style="width:100%;height:110px;object-fit:cover;display:block"/></div>`
+    :`<div class="rc-img" style="background:${bg}">${r.emoji}</div>`;
   card.innerHTML=`${img}${r.favourite?'<div class="rc-star">⭐</div>':''}<div class="rc-body"><div class="rc-title">${r.title}</div><div class="rc-meta">${[r.time,r.servings].filter(Boolean).join(' · ')}</div>${showCat&&r.category?`<span class="rc-cat">${r.category}</span>`:''}</div>`;
-  addLongPress(card,r.id);
+  if(!multiSelectMode)addLongPress(card,r.id);
+  // Async-load IDB image after card is created
+  if(isIdb){
+    ImgStore.get(r.id).then(data=>{
+      if(data&&card.isConnected){
+        const d=card.querySelector('.rc-img');
+        if(d){d.style.padding='0';d.style.overflow='hidden';d.innerHTML=`<img src="${data}" style="width:100%;height:110px;object-fit:cover;display:block"/>`;}
+      }
+    });
+  }
   return card;
 }
 
 let _longPressId=null;
 function addLongPress(card,id){
   let timer=null,moved=false;
-  card.addEventListener('touchstart',()=>{moved=false;timer=setTimeout(()=>{if(!moved){showCardSheet(id);}},580);},{passive:true});
+  // Touch: long press enters multi-select mode
+  card.addEventListener('touchstart',()=>{moved=false;timer=setTimeout(()=>{if(!moved){enterMultiSelect(id);}},580);},{passive:true});
   card.addEventListener('touchmove',()=>{moved=true;clearTimeout(timer);},{passive:true});
   card.addEventListener('touchend',()=>clearTimeout(timer));
   card.addEventListener('touchcancel',()=>clearTimeout(timer));
+  // Desktop: right-click or long mouse press as alternative
+  card.addEventListener('contextmenu',e=>{e.preventDefault();enterMultiSelect(id);});
+}
+
+// ── Multi-select ──────────────────────────────────────────────────────────
+function enterMultiSelect(id){
+  multiSelectMode=true;
+  selectedIds=new Set([id]);
+  _rerenderForSelect();
+  _updateMsToolbar();
+}
+function exitMultiSelect(skipRerender){
+  multiSelectMode=false;
+  selectedIds=new Set();
+  const tb=document.getElementById('ms-toolbar');if(tb)tb.style.display='none';
+  if(!skipRerender)_rerenderForSelect();
+}
+function toggleSelect(id){
+  if(selectedIds.has(id))selectedIds.delete(id);else selectedIds.add(id);
+  if(selectedIds.size===0){exitMultiSelect();return;}
+  _rerenderForSelect();
+  _updateMsToolbar();
+}
+function _updateMsToolbar(){
+  const tb=document.getElementById('ms-toolbar');if(!tb)return;
+  const n=selectedIds.size;
+  tb.style.display=n>0?'flex':'none';
+  const cnt=document.getElementById('ms-count');if(cnt)cnt.textContent=n+' selected';
+  const btn=document.getElementById('ms-del-btn');if(btn)btn.textContent='Delete ('+n+')';
+}
+function _rerenderForSelect(){
+  if(_openCat)openCatDetail(_openCat);
+  else if(tab==='c')renderCats();
+  else render();
+}
+async function deleteSelected(){
+  const n=selectedIds.size;if(!n)return;
+  if(!confirm('Delete '+n+' recipe'+(n!==1?'s':'')+' permanently?'))return;
+  for(const id of selectedIds)await ImgStore.del(id);
+  const ids=new Set(selectedIds);
+  recs=recs.filter(r=>!ids.has(r.id));
+  save();
+  buildChips();
+  exitMultiSelect(); // also re-renders
 }
 
 function showCardSheet(id){
@@ -161,8 +266,13 @@ function cardSheetDelete(){
   const id=_longPressId;closeCardSheet();
   const r=recs.find(x=>x.id===id);if(!r)return;
   if(!confirm('Delete "'+r.title+'"?'))return;
+  ImgStore.del(id);
   recs=recs.filter(x=>x.id!==id);save();
-  if(tab==='c')renderCats();else render();
+  // Stay in category detail if possible, else fall back to category grid
+  if(_openCat){
+    if(recs.some(r=>r.category===_openCat))openCatDetail(_openCat);
+    else{_openCat=null;renderCats();}
+  }else if(tab==='c')renderCats();else render();
 }
 
 function render(){
@@ -307,15 +417,26 @@ function saveEdit(){
   r.ingredients=getEditListValues('edit-ings-list');
   r.steps=getEditListValues('edit-steps-list');
   r.notes=document.getElementById('edit-notes').value.trim()||null;
-  if(editPendingImg!==undefined)r.imageData=editPendingImg;
+  if(editPendingImg!==undefined){
+    // If the new image is an IDB upload, persist it now
+    if(editPendingImg==='__idb__'&&_editPendingImgData){
+      ImgStore.set(r.id,_editPendingImgData);
+    } else if(editPendingImg!=='__idb__'&&r.imageData==='__idb__'){
+      // Replacing an IDB image with an external URL — clean up old IDB entry
+      ImgStore.del(r.id);
+    }
+    r.imageData=editPendingImg;
+    _editPendingImgData=null;
+  }
   r.savedAt=new Date().toISOString();
   save();
   exitEditMode();
-  showDetail(rid); // refresh the detail view with updated data
-  buildChips(); // refresh the main list chips in background
+  showDetail(rid);
+  buildChips();
 }
 
 function cancelEdit(){
+  _editPendingImgData=null;
   exitEditMode();
 }
 
@@ -346,7 +467,12 @@ function showDetail(id){
   document.getElementById('dnav').textContent=r.title;
   document.getElementById('dtitle').textContent=r.title;
   const h=document.getElementById('dhero');
-  if(r.imageData){h.innerHTML=`<img src="${r.imageData}"/>`;h.style.minHeight='';}
+  if(r.imageData==='__idb__'){
+    h.innerHTML=r.emoji;h.style.minHeight='150px';h.style.background=catColor(r.category);
+    ImgStore.get(id).then(data=>{
+      if(data&&rid===id){h.innerHTML=`<img src="${data}"/>`;h.style.minHeight='';}
+    });
+  }else if(r.imageData){h.innerHTML=`<img src="${r.imageData}"/>`;h.style.minHeight='';}
   else{h.innerHTML=r.emoji;h.style.minHeight='150px';h.style.background=catColor(r.category);}
   document.getElementById('dcatb-txt').textContent=(r.category||'Other');
   document.getElementById('dcatb').style.display='';
@@ -389,7 +515,7 @@ function renderCmts(r){
 function postCmt(){const el=document.getElementById('cmtinp');const tx=el.value.trim();if(!tx)return;const r=recs.find(x=>x.id===rid);if(!r)return;if(!r.comments)r.comments=[];r.comments.push({id:Date.now().toString(),text:tx,date:new Date().toISOString()});r.savedAt=new Date().toISOString();el.value='';renderCmts(r);save();}
 function delCmt(cid){const r=recs.find(x=>x.id===rid);if(!r)return;r.comments=(r.comments||[]).filter(c=>c.id!==cid);r.savedAt=new Date().toISOString();renderCmts(r);save();}
 function fmtDate(iso){const d=new Date(iso);return d.toLocaleDateString('en-NZ',{day:'numeric',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-NZ',{hour:'2-digit',minute:'2-digit'});}
-async function delRecipe(){if(!confirm('Delete this recipe?'))return;recs=recs.filter(r=>r.id!==rid);save();goBack();}
+async function delRecipe(){if(!confirm('Delete this recipe?'))return;await ImgStore.del(rid);recs=recs.filter(r=>r.id!==rid);save();goBack();}
 
 
 function resetAdd(){
@@ -786,12 +912,16 @@ function proc(raw,imgData){
 function confirmSave(){
   if(!pendingRec)return;
   pendingRec.category=document.getElementById('catsel').value;
-  recs.unshift(pendingRec);save();
+  const imgData=fb64; // user-uploaded photo (base64), if any
+  if(imgData){
+    pendingRec.imageData='__idb__';
+    ImgStore.set(pendingRec.id,imgData); // async — store in IDB
+  }
   const savedId=pendingRec.id;
   const savedTitle=pendingRec.title;
   const hasPhoto=!!pendingRec.imageData;
+  recs.unshift(pendingRec);save();
   showDetail(savedId);pendingRec=null;
-  // Generate AI food image in background if no user photo
   if(!hasPhoto)genFoodImage(savedId,savedTitle);
 }
 
@@ -800,7 +930,14 @@ function confirmSave(){
 function setEditImgPreview(src,r){
   const el=document.getElementById('edit-img-preview');
   if(!el)return;
-  if(src){el.innerHTML=`<img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;">`;}
+  if(src==='__idb__'){
+    const rec=r||recs.find(x=>x.id===rid);
+    el.style.background=catColor(rec?.category);
+    el.innerHTML=`<span style="font-size:48px;">${rec?.emoji||'🍴'}</span>`;
+    ImgStore.get(rid).then(data=>{
+      if(data&&el.isConnected)el.innerHTML=`<img src="${data}" style="width:100%;height:100%;object-fit:cover;display:block;">`;
+    });
+  }else if(src){el.innerHTML=`<img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;">`;}
   else{const rec=r||recs.find(x=>x.id===rid);el.style.background=catColor(rec?.category);el.innerHTML=`<span style="font-size:48px;">${rec?.emoji||'🍴'}</span>`;}
 }
 function editOnImg(e){
@@ -808,7 +945,10 @@ function editOnImg(e){
   if(f.size>15728640){alert('Image too large (max 15MB)');return;}
   const rd=new FileReader();rd.onload=async ev=>{
     const compressed=await compressImage(ev.target.result);
-    editPendingImg=compressed;setEditImgPreview(compressed);
+    // Store compressed data in memory for saveEdit(), flag the pending image
+    _editPendingImgData=compressed;
+    editPendingImg='__idb__';
+    setEditImgPreview(compressed); // show the actual data in preview
   };rd.readAsDataURL(f);
   e.target.value='';
 }
@@ -897,6 +1037,7 @@ function closeImgPicker(){
 
 async function refreshImage(){
   const r=recs.find(x=>x.id===rid);if(!r)return;
+  if(r.imageData==='__idb__')await ImgStore.del(rid);
   r.imageData=null;save();
   const h=document.getElementById('dhero');
   h.innerHTML=r.emoji;h.style.background=catColor(r.category);h.style.minHeight='150px';h.style.animation='';
