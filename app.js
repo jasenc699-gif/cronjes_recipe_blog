@@ -1,4 +1,5 @@
 const SK='cronjes_blog_v1',KK='cronjes_apikey',WK='cronjes_welcomed',CK='cronjes_customcats';
+const SKB='cronjes_blog_v1_bak'; // backup key — written on every save so a killed mid-write never loses data
 const CATS=['Breakfast','Lunch','Dinner','Dessert','Snacks','Soups','Salads','Baking','Drinks','Other'];
 const CE={Breakfast:'🍳',Lunch:'🥙',Dinner:'🍽️',Dessert:'🍰',Snacks:'🧀',Soups:'🍲',Salads:'🥗',Baking:'🥐',Drinks:'🥤',Other:'🍴'};
 const CC={Breakfast:'#FFF0D0',Lunch:'#E2F2E0',Dinner:'#D5E8F5',Dessert:'#FFD6E8',Snacks:'#FFFAC0',Soups:'#FFE4C8',Salads:'#DCF2CC',Baking:'#F5E8D0',Drinks:'#CCE8F8',Other:'#E8E4DC'};
@@ -18,11 +19,26 @@ function allCats(){return[...CATS,...getCustomCats().filter(c=>!CATS.includes(c)
 function catEmoji(c){return CE[c]||'🍴';}
 function catColor(c){return CC[c]||CUSTOMCC;}
 let recs=[],tab='c',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false,editPendingImg=undefined;
-let _openCat=null; // category tile currently drilled into
-let _prevTab='c',_prevCat=null; // where the user came from before entering detail
+let _openCat=null;
+let _prevTab='c',_prevCat=null;
 
 function load(){
-  try{const v=store.get(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
+  // Try main key first; fall back to backup if missing or corrupt.
+  // This guards against iOS killing the app mid-write and leaving partial JSON.
+  const tryParse=k=>{try{const v=store.get(k);return v?JSON.parse(v):null;}catch(e){return null;}};
+  const main=tryParse(SK);
+  if(Array.isArray(main)&&main.length>0){
+    recs=main;
+  } else {
+    const bak=tryParse(SKB);
+    if(Array.isArray(bak)&&bak.length>0){
+      recs=bak;
+      save(); // re-write main key from backup
+      console.warn('cronjes: restored from backup storage key');
+    } else {
+      recs=main||bak||[];
+    }
+  }
   if(!store.get(WK))go('welcome');
   else if(!getKey())go('settings');
   else{
@@ -31,7 +47,11 @@ function load(){
     go(last==='welcome'||last==='add'?'main':last);
   }
 }
-function save(){try{store.set(SK,JSON.stringify(recs));}catch(e){}}
+function save(){
+  // Write backup FIRST so if the app is killed mid-write on the main key,
+  // the backup is already intact and load() can restore from it.
+  try{const json=JSON.stringify(recs);store.set(SKB,json);store.set(SK,json);}catch(e){}
+}
 function welcomeDone(){store.set(WK,'1');if(!getKey())go('settings');else{buildChips();render();go('main');}}
 
 function getKey(){return store.get(KK)||'';}
@@ -284,23 +304,17 @@ function exitEditMode(){
 }
 
 function goBack(){
-  // Return to wherever the user was before opening a recipe detail.
   const backTab=_prevTab||'c';
   const backCat=_prevCat;
-  go('main'); // resets to categories tab
+  go('main');
   if(backTab==='c'&&backCat){
-    // Came from a category tile — reopen it (if it still has recipes)
     if(recs.some(r=>r.category===backCat))openCatDetail(backCat);
-    // else stay on category grid (go('main') already rendered it)
-  } else if(backTab!=='c'){
-    setTab(backTab); // switch to All or Favourites
+  }else if(backTab!=='c'){
+    setTab(backTab);
   }
 }
-
 function showDetail(id){
-  // Snapshot origin so goBack() knows where to return
-  _prevTab=tab;
-  _prevCat=_openCat;
+  _prevTab=tab;_prevCat=_openCat;
   rid=id;const r=recs.find(x=>x.id===id);if(!r)return;
   exitEditMode();
   go('detail');
@@ -516,16 +530,7 @@ function mergeRecipes(local,remote){
     const exTs=existing?.savedAt||'';
     if(!existing||rTs>=exTs)idMap.set(r.id,r);
   });
-  // Pass 2: title-based dedup — catches same recipe added on two devices before
-  // any sync (different ids, same normalised title).
-  const titleMap=new Map();
-  for(const r of idMap.values()){
-    const key=(r.title||'').trim().toLowerCase();
-    if(!key){titleMap.set(r.id,r);continue;}
-    const existing=titleMap.get(key);
-    if(!existing||((r.savedAt||'')>=(existing.savedAt||'')))titleMap.set(key,r);
-  }
-  return [...titleMap.values()].sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
+  return [...idMap.values()].sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
 }
 
 async function syncNow(){
@@ -538,12 +543,34 @@ async function syncNow(){
     const gr=await fetch(endpoint);
     if(!gr.ok)throw new Error('Read failed: '+gr.status+' '+gr.statusText);
     const remote=await gr.json();
-    const remoteRecs=remote?.recipes||[];
+
+    // Firebase RTDB sometimes returns a numeric-keyed object instead of an array
+    // when elements have been partially updated. Normalise to a plain array.
+    let remoteRecs=remote?.recipes||[];
+    if(!Array.isArray(remoteRecs))remoteRecs=Object.values(remoteRecs).filter(r=>r&&r.id);
+
+    // Safety guard: never let an empty cloud response wipe a non-empty local collection.
+    // This prevents data loss when Firebase is unreachable, returns null, or was
+    // accidentally cleared — and also guards against a corrupt local load().
+    if(remoteRecs.length===0&&recs.length>0){
+      // Still push local data up so the cloud is populated, but don't wipe local.
+      const pw=await fetch(endpoint,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipes:recs,syncedAt:new Date().toISOString(),device:navigator.userAgent.slice(0,60)})});
+      if(!pw.ok)throw new Error('Write failed: '+pw.status+' '+pw.statusText);
+      store.set('cronjes_lastsync',new Date().toISOString());
+      loadSyncFields();
+      setSyncResult(`✓ Synced! Pushed ${recs.length} recipe${recs.length!==1?'s':''} to cloud (cloud was empty).`,true);
+      return;
+    }
 
     // Merge local + remote
     const merged=mergeRecipes(recs,remoteRecs);
 
-    // PUT merged back — Firebase PATCH would also work but PUT is simpler
+    // Final safety check: merged should never be empty if either side had data.
+    if(merged.length===0&&(recs.length>0||remoteRecs.length>0)){
+      throw new Error('Merge produced no recipes unexpectedly — sync aborted to protect your data. Please try again.');
+    }
+
+    // PUT merged back
     const pw=await fetch(endpoint,{
       method:'PUT',
       headers:{'Content-Type':'application/json'},
@@ -553,15 +580,13 @@ async function syncNow(){
 
     const prevIds=new Set(recs.map(r=>r.id));
     const added=merged.filter(m=>!prevIds.has(m.id)).length;
-    const totalUniqueIds=new Set([...recs.map(r=>r.id),...remoteRecs.map(r=>r.id)]).size;
-    const dupsSkipped=totalUniqueIds-merged.length;
     recs=merged;save();buildChips();
     if(tab==='c')renderCats();else render();
     store.set('cronjes_lastsync',new Date().toISOString());
     loadSyncFields();
-    setSyncResult(`✓ Synced! ${merged.length} recipe${merged.length!==1?'s':''} in collection.${added>0?'\n'+added+' new recipe'+(added!==1?'s':'')+' pulled from cloud.':''}${dupsSkipped>0?'\n'+dupsSkipped+' duplicate'+(dupsSkipped!==1?'s':'')+' removed.':''}`,true);
+    setSyncResult(`✓ Synced! ${merged.length} recipe${merged.length!==1?'s':''} in collection.${added>0?'\n'+added+' new recipe'+(added!==1?'s':'')+' pulled from cloud.':''}`,true);
   }catch(e){
-    setSyncResult('Sync failed: '+(e.message||String(e))+'\n\nCheck your Database URL and secret are correct. Make sure your Firebase Realtime Database rules allow read/write.',false);
+    setSyncResult('Sync failed: '+(e.message||String(e))+'\n\nYour local recipes are untouched. Check your Database URL and secret, and ensure Firebase rules allow read/write.',false);
   }
 }
 
