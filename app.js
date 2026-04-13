@@ -1,4 +1,4 @@
-const SK='cronjes_blog_v1',KK='cronjes_apikey',WK='cronjes_welcomed',JBK='cronjes_jbkey',JBB='cronjes_jbbin',CK='cronjes_customcats';
+const SK='cronjes_blog_v1',KK='cronjes_apikey',WK='cronjes_welcomed',CK='cronjes_customcats';
 const CATS=['Breakfast','Lunch','Dinner','Dessert','Snacks','Soups','Salads','Baking','Drinks','Other'];
 const CE={Breakfast:'🍳',Lunch:'🥙',Dinner:'🍽️',Dessert:'🍰',Snacks:'🧀',Soups:'🍲',Salads:'🥗',Baking:'🥐',Drinks:'🥤',Other:'🍴'};
 const CC={Breakfast:'#FFF0D0',Lunch:'#E2F2E0',Dinner:'#D5E8F5',Dessert:'#FFD6E8',Snacks:'#FFFAC0',Soups:'#FFE4C8',Salads:'#DCF2CC',Baking:'#F5E8D0',Drinks:'#CCE8F8',Other:'#E8E4DC'};
@@ -23,7 +23,11 @@ function load(){
   try{const v=store.get(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
   if(!store.get(WK))go('welcome');
   else if(!getKey())go('settings');
-  else{go('main');}
+  else{
+    // Restore last screen so app-switching doesn't lose your place
+    const last=sessionStorage.getItem('cronjes_screen')||'main';
+    go(last==='welcome'||last==='add'?'main':last);
+  }
 }
 function save(){try{store.set(SK,JSON.stringify(recs));}catch(e){}}
 function welcomeDone(){store.set(WK,'1');if(!getKey())go('settings');else{buildChips();render();go('main');}}
@@ -32,12 +36,19 @@ function getKey(){return store.get(KK)||'';}
 function saveKey(){
   const v=document.getElementById('keyinp').value.trim();
   if(!v.startsWith('gsk_')){alert('That doesn\'t look like a valid Groq key. It should start with gsk_');return;}
-  store.set(KK,v);
+  store.set(KK,v);store.remove('cronjes_keydraft');
   document.getElementById('keyinp').value='';
   showKinfo();alert('API key saved ✓');buildChips();render();go('main');
 }
 function clearKey(){if(!confirm('Remove saved API key?'))return;store.remove(KK);document.getElementById('kinfo').style.display='none';}
-function showKinfo(){document.getElementById('kinfo').style.display=getKey()?'block':'none';}
+function showKinfo(){
+  document.getElementById('kinfo').style.display=getKey()?'block':'none';
+  // Auto-save key field draft so switching apps doesn't lose it
+  const ki=document.getElementById('keyinp');
+  if(ki&&!ki._autoSave){ki._autoSave=true;ki.addEventListener('input',()=>store.set('cronjes_keydraft',ki.value.trim()));}
+  // Restore draft if no key saved yet
+  if(!getKey()){const d=store.get('cronjes_keydraft');if(d&&ki)ki.value=d;}
+}
 
 function go(s){
   const ids={main:'sm',add:'sadd',detail:'sdet',settings:'sset',welcome:'swel'};
@@ -45,6 +56,7 @@ function go(s){
   const el=document.getElementById(ids[s]);
   if(!el)return;
   el.classList.add('on');
+  sessionStorage.setItem('cronjes_screen',s);
   if(s==='add')resetAdd();
   if(s==='main'){if(editMode)exitEditMode();buildChips();setTab('c');}
   if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();}
@@ -427,30 +439,43 @@ function deleteCustomCat(c){
   save();renderCatManager();buildChips();render();
 }
 
+// ── Firebase Realtime Database Sync ───────────────────────────────────────
+const FBK='cronjes_fburl';   // database URL
+const FBSK='cronjes_fbsecret'; // database secret
+const FBID='cronjes_fbsyncid'; // sync node name
+
 function loadSyncFields(){
-  const k=store.get(JBK)||'';
-  const b=store.get(JBB)||'';
-  document.getElementById('jbkey').value=''; // keep password hidden
-  document.getElementById('jbbin').value=b;
+  const url=store.get(FBK)||store.get('cronjes_fburl_draft')||'';
+  const sid=store.get(FBID)||store.get('cronjes_fbsid_draft')||'cronjes';
+  // Restore typed-but-unsaved values from draft store
+  const urlEl=document.getElementById('jbbin');
+  const keyEl=document.getElementById('jbkey');
+  const sidEl=document.getElementById('fbsyncid');
+  if(urlEl)urlEl.value=url;
+  if(keyEl)keyEl.value=''; // never show secret in field for security, but restore if draft exists
+  const secretDraft=store.get('cronjes_fbsecret_draft')||'';
+  if(keyEl&&secretDraft)keyEl.value=secretDraft;
+  if(sidEl)sidEl.value=sid;
   const si=document.getElementById('syncinfo');
   const last=store.get('cronjes_lastsync');
-  if(b){si.textContent='Bin ID: '+b+(last?' · Last synced: '+new Date(last).toLocaleString('en-NZ',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'');si.style.display='block';}
-  else{si.style.display='none';}
-}
-
-function resetBinId(){
-  if(!confirm('Clear the saved Bin ID? Next sync will create a new bin. Your local recipes are safe.'))return;
-  store.remove(JBB);
-  document.getElementById('jbbin').value='';
-  loadSyncFields();
-  setSyncResult('Bin ID cleared. Tap Sync Now to create a new bin.',true);
+  if(url){
+    si.textContent='Database: '+url.replace('https://','').split('.')[0]+(last?' · Last synced: '+new Date(last).toLocaleString('en-NZ',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'');
+    si.style.display='block';
+  }else{si.style.display='none';}
+  // Wire up auto-save on every keystroke so switching apps never loses input
+  if(urlEl&&!urlEl._autoSave){urlEl._autoSave=true;urlEl.addEventListener('input',()=>store.set('cronjes_fburl_draft',urlEl.value.trim()));}
+  if(keyEl&&!keyEl._autoSave){keyEl._autoSave=true;keyEl.addEventListener('input',()=>store.set('cronjes_fbsecret_draft',keyEl.value.trim()));}
+  if(sidEl&&!sidEl._autoSave){sidEl._autoSave=true;sidEl.addEventListener('input',()=>store.set('cronjes_fbsid_draft',sidEl.value.trim()));}
 }
 
 function saveSyncCreds(){
-  const k=document.getElementById('jbkey').value.trim();
-  const b=document.getElementById('jbbin').value.trim();
-  if(k)store.set(JBK,k);
-  if(b)store.set(JBB,b);
+  const url=(document.getElementById('jbbin').value.trim()||store.get('cronjes_fburl_draft')||'').replace(/\/+$/,'');
+  const secret=document.getElementById('jbkey').value.trim()||store.get('cronjes_fbsecret_draft')||'';
+  const sid=((document.getElementById('fbsyncid')?.value||store.get('cronjes_fbsid_draft')||'cronjes').trim().replace(/[^a-zA-Z0-9_-]/g,'-'))||'cronjes';
+  if(url){store.set(FBK,url);store.remove('cronjes_fburl_draft');}
+  if(secret){store.set(FBSK,secret);store.remove('cronjes_fbsecret_draft');}
+  store.set(FBID,sid);store.remove('cronjes_fbsid_draft');
+  return{url:url||store.get(FBK)||'',secret:secret||store.get(FBSK)||'',sid};
 }
 
 function setSyncResult(msg,ok){
@@ -459,7 +484,6 @@ function setSyncResult(msg,ok){
 }
 
 function mergeRecipes(local,remote){
-  // Merge by ID, keeping most recently saved version on conflict
   const map=new Map();
   [...remote,...local].forEach(r=>{
     if(!r||!r.id)return;
@@ -470,56 +494,36 @@ function mergeRecipes(local,remote){
 }
 
 async function syncNow(){
-  saveSyncCreds();
-  const key=(store.get(JBK)||document.getElementById('jbkey').value.trim()).trim();
-  let binId=(store.get(JBB)||document.getElementById('jbbin').value.trim()).trim();
-  if(!key){setSyncResult('Please enter your JSONBin Master Key first.',false);return;}
+  const{url,secret,sid}=saveSyncCreds();
+  if(!url){setSyncResult('Please enter your Firebase Database URL first.',false);return;}
   setSyncResult('Syncing…',true);
+  const endpoint=`${url}/cronjes_sync/${sid}.json${secret?'?auth='+encodeURIComponent(secret):''}`;
   try{
-    if(!binId){
-      // Create a new bin
-      const cr=await fetch('https://api.jsonbin.io/v3/b',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-Master-Key':key,'X-Bin-Name':'Cronjes Recipes','X-Bin-Private':'true'},
-        body:JSON.stringify({recipes:recs,syncedAt:new Date().toISOString()})
-      });
-      const cd=await cr.json();
-      if(cd.message&&!cd.metadata)throw new Error(cd.message);
-      binId=cd.metadata.id;
-      store.set(JBB,binId);
-      document.getElementById('jbbin').value=binId;
-      store.set('cronjes_lastsync',new Date().toISOString());
-      loadSyncFields();
-      setSyncResult(`✓ New bin created!\n\nBin ID: ${binId}\n\nCopy this ID to your other device, paste it into the Bin ID field there, and tap Sync Now.`,true);
-      return;
-    }
-    // Read remote
-    const gr=await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`,{headers:{'X-Master-Key':key}});
-    const gd=await gr.json();
-    if(gd.message&&!gd.record)throw new Error(gd.message);
-    const remote=gd.record?.recipes||[];
-    // Merge
-    const merged=mergeRecipes(recs,remote);
-    // Push merged back
-    const pr=await fetch(`https://api.jsonbin.io/v3/b/${binId}`,{
+    // GET remote data
+    const gr=await fetch(endpoint);
+    if(!gr.ok)throw new Error('Read failed: '+gr.status+' '+gr.statusText);
+    const remote=await gr.json();
+    const remoteRecs=remote?.recipes||[];
+
+    // Merge local + remote
+    const merged=mergeRecipes(recs,remoteRecs);
+
+    // PUT merged back — Firebase PATCH would also work but PUT is simpler
+    const pw=await fetch(endpoint,{
       method:'PUT',
-      headers:{'Content-Type':'application/json','X-Master-Key':key},
-      body:JSON.stringify({recipes:merged,syncedAt:new Date().toISOString()})
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({recipes:merged,syncedAt:new Date().toISOString(),device:navigator.userAgent.slice(0,60)})
     });
-    const pd=await pr.json();
-    if(pd.message&&!pd.record)throw new Error(pd.message);
-    const added=merged.length-recs.length;
-    recs=merged;save();buildChips();render();
+    if(!pw.ok)throw new Error('Write failed: '+pw.status+' '+pw.statusText);
+
+    const added=merged.filter(m=>!recs.find(r=>r.id===m.id)).length;
+    recs=merged;save();buildChips();
+    if(tab==='c')renderCats();else render();
     store.set('cronjes_lastsync',new Date().toISOString());
     loadSyncFields();
-    setSyncResult(`✓ Synced! ${merged.length} recipes in collection.${added>0?' '+added+' new recipe'+(added!==1?'s':'')+ ' pulled from cloud.':''}`,true);
+    setSyncResult(`✓ Synced! ${merged.length} recipe${merged.length!==1?'s':''} in collection.${added>0?'\n'+added+' new recipe'+(added!==1?'s':'')+' pulled from cloud.':''}`,true);
   }catch(e){
-    const msg=e.message||String(e);
-    if(msg.toLowerCase().includes('route not found')||msg.toLowerCase().includes('not found')){
-      setSyncResult('Sync failed: Bin not found. Your saved Bin ID may be invalid or the bin was deleted on JSONBin. Tap "Reset Bin ID" to create a fresh bin.',false);
-    } else {
-      setSyncResult('Sync failed: '+msg,false);
-    }
+    setSyncResult('Sync failed: '+(e.message||String(e))+'\n\nCheck your Database URL and secret are correct. Make sure your Firebase Realtime Database rules allow read/write.',false);
   }
 }
 
