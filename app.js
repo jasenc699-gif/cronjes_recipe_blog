@@ -18,6 +18,8 @@ function allCats(){return[...CATS,...getCustomCats().filter(c=>!CATS.includes(c)
 function catEmoji(c){return CE[c]||'🍴';}
 function catColor(c){return CC[c]||CUSTOMCC;}
 let recs=[],tab='c',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false,editPendingImg=undefined;
+let _openCat=null; // category tile currently drilled into
+let _prevTab='c',_prevCat=null; // where the user came from before entering detail
 
 function load(){
   try{const v=store.get(SK);if(v)recs=JSON.parse(v);}catch(e){recs=[];}
@@ -156,6 +158,7 @@ function renderCats(){
 }
 
 function openCatDetail(c){
+  _openCat=c;
   document.getElementById('pcat').style.display='none';
   document.getElementById('pempty').style.display='none';
   const det=document.getElementById('pcat-detail');
@@ -172,6 +175,7 @@ function openCatDetail(c){
 }
 
 function closeCatDetail(){
+  _openCat=null;
   document.getElementById('pcat-detail').style.display='none';
   renderCats();
 }
@@ -262,7 +266,7 @@ function saveEdit(){
   r.savedAt=new Date().toISOString();
   save();
   exitEditMode();
-  showDetail(rid);
+  goBack();
   buildChips();render();
 }
 
@@ -279,7 +283,24 @@ function exitEditMode(){
   document.querySelector('#sdet .sa').scrollTop=0;
 }
 
+function goBack(){
+  // Return to wherever the user was before opening a recipe detail.
+  const backTab=_prevTab||'c';
+  const backCat=_prevCat;
+  go('main'); // resets to categories tab
+  if(backTab==='c'&&backCat){
+    // Came from a category tile — reopen it (if it still has recipes)
+    if(recs.some(r=>r.category===backCat))openCatDetail(backCat);
+    // else stay on category grid (go('main') already rendered it)
+  } else if(backTab!=='c'){
+    setTab(backTab); // switch to All or Favourites
+  }
+}
+
 function showDetail(id){
+  // Snapshot origin so goBack() knows where to return
+  _prevTab=tab;
+  _prevCat=_openCat;
   rid=id;const r=recs.find(x=>x.id===id);if(!r)return;
   exitEditMode();
   go('detail');
@@ -329,7 +350,7 @@ function renderCmts(r){
 function postCmt(){const el=document.getElementById('cmtinp');const tx=el.value.trim();if(!tx)return;const r=recs.find(x=>x.id===rid);if(!r)return;if(!r.comments)r.comments=[];r.comments.push({id:Date.now().toString(),text:tx,date:new Date().toISOString()});r.savedAt=new Date().toISOString();el.value='';renderCmts(r);save();}
 function delCmt(cid){const r=recs.find(x=>x.id===rid);if(!r)return;r.comments=(r.comments||[]).filter(c=>c.id!==cid);r.savedAt=new Date().toISOString();renderCmts(r);save();}
 function fmtDate(iso){const d=new Date(iso);return d.toLocaleDateString('en-NZ',{day:'numeric',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-NZ',{hour:'2-digit',minute:'2-digit'});}
-async function delRecipe(){if(!confirm('Delete this recipe?'))return;recs=recs.filter(r=>r.id!==rid);save();go('main');}
+async function delRecipe(){if(!confirm('Delete this recipe?'))return;recs=recs.filter(r=>r.id!==rid);save();goBack();}
 
 
 function resetAdd(){
@@ -486,19 +507,15 @@ function setSyncResult(msg,ok){
 function mergeRecipes(local,remote){
   // Pass 1: id-based dedup.
   // Iterate remote first, then local — local is processed LAST so it wins on
-  // equal savedAt. This means a local change always beats an identically-stamped
-  // cloud copy, which fixes overwrite after quick edits or changes that don't
-  // bump savedAt (favourites, comments, category).
+  // equal savedAt. A local edit always beats an identically-stamped cloud copy.
   const idMap=new Map();
   [...remote,...local].forEach(r=>{
     if(!r||!r.id)return;
     const existing=idMap.get(r.id);
     const rTs=r.savedAt||'';
     const exTs=existing?.savedAt||'';
-    // >= means local (second pass) wins ties; remote only kept when strictly newer
     if(!existing||rTs>=exTs)idMap.set(r.id,r);
   });
-
   // Pass 2: title-based dedup — catches same recipe added on two devices before
   // any sync (different ids, same normalised title).
   const titleMap=new Map();
@@ -508,7 +525,6 @@ function mergeRecipes(local,remote){
     const existing=titleMap.get(key);
     if(!existing||((r.savedAt||'')>=(existing.savedAt||'')))titleMap.set(key,r);
   }
-
   return [...titleMap.values()].sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
 }
 
