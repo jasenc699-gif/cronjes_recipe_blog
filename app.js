@@ -315,19 +315,19 @@ function openCatEdit(){
 function saveCatEdit(){
   const r=recs.find(x=>x.id===rid);if(!r)return;
   const sel=document.getElementById('dcatsel');
-  r.category=sel.value;save();
+  r.category=sel.value;r.savedAt=new Date().toISOString();save();
   document.getElementById('dcatb-txt').textContent=r.category;
   document.getElementById('dcatb').style.display='';
   sel.style.display='none';
   buildChips();
 }
-function togFav(){const r=recs.find(x=>x.id===rid);if(!r)return;r.favourite=!r.favourite;updStar(r.favourite);save();}
+function togFav(){const r=recs.find(x=>x.id===rid);if(!r)return;r.favourite=!r.favourite;r.savedAt=new Date().toISOString();updStar(r.favourite);save();}
 function renderCmts(r){
   const cmts=r.comments||[];
   document.getElementById('cmtlist').innerHTML=cmts.length?cmts.map(c=>`<div class="cmtitem"><div class="cmttxt">${c.text}</div><div class="cmtrow"><div class="cmtdate">${fmtDate(c.date)}</div><button class="cmtrm" onclick="delCmt('${c.id}')">Remove</button></div></div>`).join(''):`<p style="font-size:13px;color:var(--mu);font-family:Arial,sans-serif;margin-bottom:10px;">No notes yet.</p>`;
 }
-function postCmt(){const el=document.getElementById('cmtinp');const tx=el.value.trim();if(!tx)return;const r=recs.find(x=>x.id===rid);if(!r)return;if(!r.comments)r.comments=[];r.comments.push({id:Date.now().toString(),text:tx,date:new Date().toISOString()});el.value='';renderCmts(r);save();}
-function delCmt(cid){const r=recs.find(x=>x.id===rid);if(!r)return;r.comments=(r.comments||[]).filter(c=>c.id!==cid);renderCmts(r);save();}
+function postCmt(){const el=document.getElementById('cmtinp');const tx=el.value.trim();if(!tx)return;const r=recs.find(x=>x.id===rid);if(!r)return;if(!r.comments)r.comments=[];r.comments.push({id:Date.now().toString(),text:tx,date:new Date().toISOString()});r.savedAt=new Date().toISOString();el.value='';renderCmts(r);save();}
+function delCmt(cid){const r=recs.find(x=>x.id===rid);if(!r)return;r.comments=(r.comments||[]).filter(c=>c.id!==cid);r.savedAt=new Date().toISOString();renderCmts(r);save();}
 function fmtDate(iso){const d=new Date(iso);return d.toLocaleDateString('en-NZ',{day:'numeric',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-NZ',{hour:'2-digit',minute:'2-digit'});}
 async function delRecipe(){if(!confirm('Delete this recipe?'))return;recs=recs.filter(r=>r.id!==rid);save();go('main');}
 
@@ -484,27 +484,29 @@ function setSyncResult(msg,ok){
 }
 
 function mergeRecipes(local,remote){
-  // Pass 1: deduplicate by id — keep the most recently saved version
+  // Pass 1: id-based dedup.
+  // Iterate remote first, then local — local is processed LAST so it wins on
+  // equal savedAt. This means a local change always beats an identically-stamped
+  // cloud copy, which fixes overwrite after quick edits or changes that don't
+  // bump savedAt (favourites, comments, category).
   const idMap=new Map();
   [...remote,...local].forEach(r=>{
     if(!r||!r.id)return;
     const existing=idMap.get(r.id);
-    if(!existing||(r.savedAt&&(!existing.savedAt||r.savedAt>existing.savedAt)))idMap.set(r.id,r);
+    const rTs=r.savedAt||'';
+    const exTs=existing?.savedAt||'';
+    // >= means local (second pass) wins ties; remote only kept when strictly newer
+    if(!existing||rTs>=exTs)idMap.set(r.id,r);
   });
 
-  // Pass 2: deduplicate by normalised title — catches same recipe added on
-  // two devices before any sync (different ids, same title)
+  // Pass 2: title-based dedup — catches same recipe added on two devices before
+  // any sync (different ids, same normalised title).
   const titleMap=new Map();
   for(const r of idMap.values()){
     const key=(r.title||'').trim().toLowerCase();
-    if(!key)continue; // skip untitled — keep all
+    if(!key){titleMap.set(r.id,r);continue;}
     const existing=titleMap.get(key);
-    if(!existing||(r.savedAt&&(!existing.savedAt||r.savedAt>existing.savedAt)))titleMap.set(key,r);
-  }
-  // Preserve any untitled recipes that were id-deduped
-  for(const r of idMap.values()){
-    const key=(r.title||'').trim().toLowerCase();
-    if(!key)titleMap.set(r.id,r);
+    if(!existing||((r.savedAt||'')>=(existing.savedAt||'')))titleMap.set(key,r);
   }
 
   return [...titleMap.values()].sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
