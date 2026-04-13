@@ -438,6 +438,14 @@ function loadSyncFields(){
   else{si.style.display='none';}
 }
 
+function resetBinId(){
+  if(!confirm('Clear the saved Bin ID? Next sync will create a new bin. Your local recipes are safe.'))return;
+  store.remove(JBB);
+  document.getElementById('jbbin').value='';
+  loadSyncFields();
+  setSyncResult('Bin ID cleared. Tap Sync Now to create a new bin.',true);
+}
+
 function saveSyncCreds(){
   const k=document.getElementById('jbkey').value.trim();
   const b=document.getElementById('jbbin').value.trim();
@@ -451,16 +459,20 @@ function setSyncResult(msg,ok){
 }
 
 function mergeRecipes(local,remote){
-  // Local recipes always win — only pull in recipes from cloud that don't exist on this device
-  const localIds=new Set(local.filter(r=>r&&r.id).map(r=>r.id));
-  const newFromCloud=remote.filter(r=>r&&r.id&&!localIds.has(r.id));
-  return [...local,...newFromCloud].sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
+  // Merge by ID, keeping most recently saved version on conflict
+  const map=new Map();
+  [...remote,...local].forEach(r=>{
+    if(!r||!r.id)return;
+    const existing=map.get(r.id);
+    if(!existing||(r.savedAt&&(!existing.savedAt||r.savedAt>existing.savedAt)))map.set(r.id,r);
+  });
+  return [...map.values()].sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
 }
 
 async function syncNow(){
   saveSyncCreds();
-  const key=store.get(JBK)||document.getElementById('jbkey').value.trim();
-  let binId=store.get(JBB)||document.getElementById('jbbin').value.trim();
+  const key=(store.get(JBK)||document.getElementById('jbkey').value.trim()).trim();
+  let binId=(store.get(JBB)||document.getElementById('jbbin').value.trim()).trim();
   if(!key){setSyncResult('Please enter your JSONBin Master Key first.',false);return;}
   setSyncResult('Syncing…',true);
   try{
@@ -500,8 +512,15 @@ async function syncNow(){
     recs=merged;save();buildChips();render();
     store.set('cronjes_lastsync',new Date().toISOString());
     loadSyncFields();
-    setSyncResult(`✓ Synced! ${merged.length} recipes in collection.${added>0?' '+added+' new recipe'+(added!==1?'s':'')+' added from cloud.':' No new recipes to pull.'}`,true);
-  }catch(e){setSyncResult('Sync failed: '+(e.message||e),false);}
+    setSyncResult(`✓ Synced! ${merged.length} recipes in collection.${added>0?' '+added+' new recipe'+(added!==1?'s':'')+ ' pulled from cloud.':''}`,true);
+  }catch(e){
+    const msg=e.message||String(e);
+    if(msg.toLowerCase().includes('route not found')||msg.toLowerCase().includes('not found')){
+      setSyncResult('Sync failed: Bin not found. Your saved Bin ID may be invalid or the bin was deleted on JSONBin. Tap "Reset Bin ID" to create a fresh bin.',false);
+    } else {
+      setSyncResult('Sync failed: '+msg,false);
+    }
+  }
 }
 
 // BACKUP
