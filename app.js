@@ -50,7 +50,32 @@ function load(){
 function save(){
   // Write backup FIRST so if the app is killed mid-write on the main key,
   // the backup is already intact and load() can restore from it.
-  try{const json=JSON.stringify(recs);store.set(SKB,json);store.set(SK,json);}catch(e){}
+  // Base64 images can easily exceed the 5-10 MB localStorage quota on iOS Safari.
+  // Strategy: try full save; if quota is exceeded strip base64 data URIs (keep
+  // external URLs which are tiny), then try again; only alert on total failure.
+  const _write=json=>{
+    // Use localStorage directly so we can catch quota errors that store.set swallows.
+    try{localStorage.setItem(SKB,json);localStorage.setItem(SK,json);return true;}
+    catch(e){
+      // Fall back to in-memory so the current session still works.
+      _mem[SKB]=json;_mem[SK]=json;return false;
+    }
+  };
+  try{
+    const json=JSON.stringify(recs);
+    if(!_write(json)){
+      // Quota hit — strip base64 data URIs (uploaded photos) and retry.
+      // External image URLs (https://…) are kept; they're tiny strings.
+      const slim=recs.map(r=>({...r,imageData:(r.imageData&&r.imageData.startsWith('data:'))?null:r.imageData}));
+      const slimJson=JSON.stringify(slim);
+      if(!_write(slimJson)){
+        // Still failing — storage is completely full.
+        alert('⚠️ Storage is full — your latest changes could not be saved.\nGo to Settings → Export All Recipes to back up your data, then clear some space.');
+      } else {
+        console.warn('cronjes: saved without uploaded photos (base64) to free up storage. External image URLs were kept.');
+      }
+    }
+  }catch(e){console.error('cronjes: save error',e);}
 }
 function welcomeDone(){store.set(WK,'1');if(!getKey())go('settings');else{buildChips();render();go('main');}}
 
@@ -81,7 +106,7 @@ function go(s){
   sessionStorage.setItem('cronjes_screen',s);
   if(s==='add')resetAdd();
   if(s==='main'){if(editMode)exitEditMode();buildChips();setTab('c');}
-  if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();}
+  if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();renderStorageBar();}
 }
 
 function setTab(t){
@@ -286,8 +311,8 @@ function saveEdit(){
   r.savedAt=new Date().toISOString();
   save();
   exitEditMode();
-  goBack();
-  buildChips();render();
+  showDetail(rid); // refresh the detail view with updated data
+  buildChips(); // refresh the main list chips in background
 }
 
 function cancelEdit(){
@@ -399,11 +424,36 @@ function selMode(m){
     else{document.getElementById('dip').click();}
   }
 }
+// ── Image compression ─────────────────────────────────────────────────────
+// Resizes and re-encodes an image to a storage-safe size.
+// Max 900px on longest side, JPEG @ 72% quality.
+// A typical phone photo (3-5 MB) compresses to ~80-150 KB — about a 25× saving —
+// with no visible quality loss at mobile screen sizes.
+function compressImage(dataUrl,maxPx=900,quality=0.72){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(w>maxPx||h>maxPx){
+        if(w>=h){h=Math.round(h*(maxPx/w));w=maxPx;}
+        else{w=Math.round(w*(maxPx/h));h=maxPx;}
+      }
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg',quality));
+    };
+    img.onerror=()=>resolve(dataUrl); // fall back to original if canvas fails
+    img.src=dataUrl;
+  });
+}
+
 function onImg(e){
   const f=e.target.files[0];if(!f)return;
-  if(f.size>5242880){showErr('Image too large (max 5MB).');return;}
-  const rd=new FileReader();rd.onload=ev=>{
-    fb64=ev.target.result;
+  // Allow up to 15 MB source — compression will shrink it to ~100-200 KB
+  if(f.size>15728640){showErr('Image too large (max 15MB).');return;}
+  const rd=new FileReader();rd.onload=async ev=>{
+    const compressed=await compressImage(ev.target.result);
+    fb64=compressed;
     const im=document.getElementById('imgprev');im.src=fb64;
     document.getElementById('sec-p').style.display='block';
     document.getElementById('op-p-hint').textContent='Image ready ✓';
@@ -590,6 +640,46 @@ async function syncNow(){
   }
 }
 
+function getStorageStats(){
+  try{
+    const recJson=localStorage.getItem(SK)||'';
+    const totalBytes=recJson.length;
+    const base64Bytes=recs.reduce((acc,r)=>{
+      if(r.imageData&&r.imageData.startsWith('data:'))acc+=r.imageData.length;
+      return acc;
+    },0);
+    const limitBytes=5*1024*1024; // 5 MB conservative iOS Safari limit
+    const pct=Math.min(100,Math.round((totalBytes/limitBytes)*100));
+    const fmt=b=>b>1048576?(b/1048576).toFixed(1)+' MB':b>1024?(b/1024).toFixed(0)+' KB':b+' B';
+    return{total:fmt(totalBytes),images:fmt(base64Bytes),pct,count:recs.length,limitBytes,totalBytes};
+  }catch(e){return null;}
+}
+function renderStorageBar(){
+  const el=document.getElementById('storage-bar-wrap');if(!el)return;
+  const s=getStorageStats();if(!s){el.style.display='none';return;}
+  el.style.display='block';
+  const color=s.pct>80?'#C05050':s.pct>55?'#C07820':'var(--tc)';
+  document.getElementById('storage-bar-fill').style.width=s.pct+'%';
+  document.getElementById('storage-bar-fill').style.background=color;
+  document.getElementById('storage-bar-label').textContent=
+    s.total+' used of ~5 MB ('+s.pct+'%) · '+s.count+' recipe'+(s.count!==1?'s':'')+
+    (s.images!=='0 B'?' · '+s.images+' in uploaded photos':'');
+  document.getElementById('storage-bar-warn').style.display=s.pct>80?'block':'none';
+}
+
+function clearAllData(){
+  if(!confirm('This will permanently delete ALL your recipes, your API key, and all settings.\n\nHave you exported a backup? This cannot be undone.'))return;
+  // Clear every known key
+  [SK,SKB,KK,WK,CK,FBK,FBSK,FBID,'cronjes_lastsync','cronjes_screen',
+   'cronjes_keydraft','cronjes_fburl_draft','cronjes_fbsecret_draft','cronjes_fbsid_draft'
+  ].forEach(k=>store.remove(k));
+  // Also clear session
+  try{sessionStorage.clear();}catch(e){}
+  recs=[];
+  alert('All data cleared. The app will now restart.');
+  location.reload();
+}
+
 // BACKUP
 function exportBackup(){
   if(!recs.length){alert('No recipes to export yet.');return;}
@@ -602,11 +692,19 @@ async function importBackup(e){
   try{
     const data=JSON.parse(await f.text());
     const incoming=Array.isArray(data)?data:(data.recipes||[]);
-    if(!incoming.length){res.textContent='No recipes found in this file.';res.style.display='block';return;}
-    const ids=new Set(recs.map(r=>r.id));
-    const newOnes=incoming.filter(r=>r.id&&!ids.has(r.id));
-    recs=recs.concat(newOnes);save();buildChips();render();
-    res.textContent=`✓ Imported ${newOnes.length} new recipe${newOnes.length!==1?'s':''} (${incoming.length-newOnes.length} skipped as duplicates).`;
+    if(!incoming.length){res.textContent='No recipes found in this file.';res.style.color='#a03030';res.style.display='block';return;}
+    // Use the same timestamp-aware merge as cloud sync so the newest version of
+    // each recipe wins — not just "skip if ID already exists".
+    const prevCount=recs.length;
+    const merged=mergeRecipes(recs,incoming);
+    const added=merged.length-prevCount;
+    const updated=incoming.filter(r=>{
+      const local=recs.find(x=>x.id===r.id);
+      return local&&(r.savedAt||'')>(local.savedAt||'');
+    }).length;
+    recs=merged;save();buildChips();
+    if(tab==='c')renderCats();else render();
+    res.textContent=`✓ Import complete: ${added} new recipe${added!==1?'s':''} added${updated>0?', '+updated+' updated from backup':''}. ${merged.length} total in collection.`;
     res.style.color='var(--tc)';res.style.display='block';
   }catch(err){res.textContent='Could not read file. Make sure it\'s a valid Cronjes backup.';res.style.color='#a03030';res.style.display='block';}
   e.target.value='';
@@ -707,8 +805,11 @@ function setEditImgPreview(src,r){
 }
 function editOnImg(e){
   const f=e.target.files[0];if(!f)return;
-  if(f.size>8388608){alert('Image too large (max 8MB)');return;}
-  const rd=new FileReader();rd.onload=ev=>{editPendingImg=ev.target.result;setEditImgPreview(ev.target.result);};rd.readAsDataURL(f);
+  if(f.size>15728640){alert('Image too large (max 15MB)');return;}
+  const rd=new FileReader();rd.onload=async ev=>{
+    const compressed=await compressImage(ev.target.result);
+    editPendingImg=compressed;setEditImgPreview(compressed);
+  };rd.readAsDataURL(f);
   e.target.value='';
 }
 async function editSearchImage(){

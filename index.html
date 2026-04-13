@@ -403,7 +403,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
         <div class="dbody">
           <div class="dtitle" id="dtitle"></div>
           <div class="drow">
-            <span class="catbadge" id="dcatb"><span id="dcatb-txt"></span></span>
+            <span class="catbadge" id="dcatb" onclick="openCatEdit()" style="cursor:pointer;" title="Change category"><span id="dcatb-txt"></span> ✎</span>
             <select id="dcatsel" class="finp" style="display:none;width:auto;padding:5px 10px;font-size:13px;margin:0;" onchange="saveCatEdit()"></select>
             <button id="dstarbtn" onclick="togFav()" class="starbtn">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
@@ -550,6 +550,16 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
           <h4>📲 Get the Full App Experience</h4>
           <p>To install Cronjes as a real standalone app (with its own icon, no browser bar, and isolated storage that clears properly when uninstalled), the file needs to be hosted online.</p>
           <p style="margin-top:8px;"><strong>Free in 30 seconds:</strong> go to <a href="https://app.netlify.com/drop" target="_blank" style="color:var(--tc);">app.netlify.com/drop</a>, drag and drop your <strong>index.html</strong> file onto the page, then open the given link on your phone.</p>
+        </div>
+
+        <div class="shd" style="margin-top:24px;">Storage</div>
+        <div class="bk-card" id="storage-bar-wrap" style="display:none;">
+          <h4>📦 Storage Used</h4>
+          <div style="background:var(--warm);border-radius:8px;height:10px;overflow:hidden;margin:10px 0 6px;">
+            <div id="storage-bar-fill" style="height:100%;width:0%;border-radius:8px;background:var(--tc);transition:width 0.4s;"></div>
+          </div>
+          <div id="storage-bar-label" style="font-size:12px;font-family:Arial,sans-serif;color:var(--mu);line-height:1.5;"></div>
+          <div id="storage-bar-warn" style="display:none;margin-top:8px;background:#fff0f0;border:1px solid #f0b0b0;color:#a03030;padding:10px 12px;border-radius:10px;font-size:12px;font-family:Arial,sans-serif;line-height:1.6;">⚠️ Storage is nearly full. Export a backup, then use "Clear All Data" and re-import — or the app may stop saving new recipes.</div>
         </div>
 
         <div class="shd" style="margin-top:24px;">Clear Data</div>
