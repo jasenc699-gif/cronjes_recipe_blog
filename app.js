@@ -6,6 +6,12 @@ const CC={Breakfast:'#FFF0D0',Lunch:'#E2F2E0',Dinner:'#D5E8F5',Dessert:'#FFD6E8'
 const CUSTOMCC='#E0EEF0';
 const FE=['🍝','🥗','🍜','🥘','🍲','🍛','🥩','🍕','🥞','🧆','🍗','🥕','🥧','🍱','🫔','🫕'];
 
+// ── Haptic feedback ───────────────────────────────────────────────────────
+// Patterns: 'tap' light tap, 'select' multi-select entry, 'toggle' checkbox tick,
+// 'save' success, 'delete' destructive, 'fav' favourite toggle, 'error' warning.
+const VIBE={tap:30,toggle:18,select:[40,30,40],save:[30,50,80],delete:[50,40,70],fav:[25,40,50],error:[60,40,60]};
+function vibe(type='tap'){try{if(navigator.vibrate)navigator.vibrate(VIBE[type]??30);}catch(e){}}
+
 // Safe storage — falls back to in-memory if localStorage is blocked (sandboxed iframes etc.)
 const _mem={};
 const store={
@@ -154,7 +160,7 @@ function go(s){
 }
 
 function setTab(t){
-  tab=t;catF='All';
+  tab=t;catF='All';vibe('tap');
   ['a','f','c'].forEach(x=>document.getElementById('nt-'+x).classList.toggle('on',x===t));
   document.getElementById('pall').style.display=t==='a'?'grid':'none';
   document.getElementById('pfav').style.display=t==='f'?'grid':'none';
@@ -173,14 +179,13 @@ function buildChips(){
   if(catF&&catF!=='All')drop.value=catF;
 }
 function filterCatDrop(val){catF=val;render();}
-function filterCat(c){catF=c;buildChips();render();}
 
 function makeRecipeCard(r, showCat){
   const card=document.createElement('div');
   const isSelected=multiSelectMode&&selectedIds.has(r.id);
   card.className='rc'+(isSelected?' ms-selected':'');
-  if(multiSelectMode){card.onclick=()=>toggleSelect(r.id);}
-  else{card.onclick=()=>showDetail(r.id);}
+  if(multiSelectMode){card.onclick=()=>{vibe('toggle');toggleSelect(r.id);};}
+  else{card.onclick=()=>{vibe('tap');showDetail(r.id);};}
   const bg=catColor(r.category);
   const isIdb=r.imageData==='__idb__';
   const img=(r.imageData&&!isIdb)
@@ -200,11 +205,10 @@ function makeRecipeCard(r, showCat){
   return card;
 }
 
-let _longPressId=null;
 function addLongPress(card,id){
   let timer=null,moved=false;
   // Touch: long press enters multi-select mode
-  card.addEventListener('touchstart',()=>{moved=false;timer=setTimeout(()=>{if(!moved){enterMultiSelect(id);}},580);},{passive:true});
+  card.addEventListener('touchstart',()=>{moved=false;timer=setTimeout(()=>{if(!moved){vibe('select');enterMultiSelect(id);}},580);},{passive:true});
   card.addEventListener('touchmove',()=>{moved=true;clearTimeout(timer);},{passive:true});
   card.addEventListener('touchend',()=>clearTimeout(timer));
   card.addEventListener('touchcancel',()=>clearTimeout(timer));
@@ -246,6 +250,7 @@ function _rerenderForSelect(){
 async function deleteSelected(){
   const n=selectedIds.size;if(!n)return;
   if(!confirm('Delete '+n+' recipe'+(n!==1?'s':'')+' permanently?'))return;
+  vibe('delete');
   for(const id of selectedIds)await ImgStore.del(id);
   const ids=new Set(selectedIds);
   recs=recs.filter(r=>!ids.has(r.id));
@@ -254,26 +259,6 @@ async function deleteSelected(){
   exitMultiSelect(); // also re-renders
 }
 
-function showCardSheet(id){
-  _longPressId=id;
-  const r=recs.find(x=>x.id===id);if(!r)return;
-  document.getElementById('card-sheet-title').textContent=r.title;
-  document.getElementById('card-action-sheet').style.display='block';
-}
-function closeCardSheet(){document.getElementById('card-action-sheet').style.display='none';_longPressId=null;}
-function cardSheetView(){const id=_longPressId;closeCardSheet();if(id)showDetail(id);}
-function cardSheetDelete(){
-  const id=_longPressId;closeCardSheet();
-  const r=recs.find(x=>x.id===id);if(!r)return;
-  if(!confirm('Delete "'+r.title+'"?'))return;
-  ImgStore.del(id);
-  recs=recs.filter(x=>x.id!==id);save();
-  // Stay in category detail if possible, else fall back to category grid
-  if(_openCat){
-    if(recs.some(r=>r.category===_openCat))openCatDetail(_openCat);
-    else{_openCat=null;renderCats();}
-  }else if(tab==='c')renderCats();else render();
-}
 
 function render(){
   const q=(document.getElementById('srch').value||'').toLowerCase();
@@ -306,7 +291,7 @@ function renderCats(){
     const n=recs.filter(r=>r.category===c).length;
     const d=document.createElement('div');d.className='ccard';
     d.style.cssText=`background:${catColor(c)};border-color:transparent;`;
-    d.onclick=()=>openCatDetail(c);
+    d.onclick=()=>{vibe('tap');openCatDetail(c);};
     d.innerHTML=`<span class="cico" style="font-size:36px;margin-bottom:10px;">${catEmoji(c)}</span><div class="cname" style="font-size:15px;font-weight:bold;">${c}</div><div class="ccnt">${n} recipe${n!==1?'s':''}</div>`;
     p.appendChild(d);
   });
@@ -429,6 +414,7 @@ function saveEdit(){
     _editPendingImgData=null;
   }
   r.savedAt=new Date().toISOString();
+  vibe('save');
   save();
   exitEditMode();
   showDetail(rid);
@@ -507,7 +493,7 @@ function saveCatEdit(){
   sel.style.display='none';
   buildChips();
 }
-function togFav(){const r=recs.find(x=>x.id===rid);if(!r)return;r.favourite=!r.favourite;r.savedAt=new Date().toISOString();updStar(r.favourite);save();}
+function togFav(){const r=recs.find(x=>x.id===rid);if(!r)return;r.favourite=!r.favourite;r.savedAt=new Date().toISOString();vibe('fav');updStar(r.favourite);save();}
 function renderCmts(r){
   const cmts=r.comments||[];
   document.getElementById('cmtlist').innerHTML=cmts.length?cmts.map(c=>`<div class="cmtitem"><div class="cmttxt">${c.text}</div><div class="cmtrow"><div class="cmtdate">${fmtDate(c.date)}</div><button class="cmtrm" onclick="delCmt('${c.id}')">Remove</button></div></div>`).join(''):`<p style="font-size:13px;color:var(--mu);font-family:Arial,sans-serif;margin-bottom:10px;">No notes yet.</p>`;
@@ -515,7 +501,7 @@ function renderCmts(r){
 function postCmt(){const el=document.getElementById('cmtinp');const tx=el.value.trim();if(!tx)return;const r=recs.find(x=>x.id===rid);if(!r)return;if(!r.comments)r.comments=[];r.comments.push({id:Date.now().toString(),text:tx,date:new Date().toISOString()});r.savedAt=new Date().toISOString();el.value='';renderCmts(r);save();}
 function delCmt(cid){const r=recs.find(x=>x.id===rid);if(!r)return;r.comments=(r.comments||[]).filter(c=>c.id!==cid);r.savedAt=new Date().toISOString();renderCmts(r);save();}
 function fmtDate(iso){const d=new Date(iso);return d.toLocaleDateString('en-NZ',{day:'numeric',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-NZ',{hour:'2-digit',minute:'2-digit'});}
-async function delRecipe(){if(!confirm('Delete this recipe?'))return;await ImgStore.del(rid);recs=recs.filter(r=>r.id!==rid);save();goBack();}
+async function delRecipe(){if(!confirm('Delete this recipe?'))return;vibe('delete');await ImgStore.del(rid);recs=recs.filter(r=>r.id!==rid);save();goBack();}
 
 
 function resetAdd(){
@@ -839,7 +825,7 @@ async function importBackup(e){
 // AI
 function showLoad(m){document.getElementById('loader').style.display='flex';document.getElementById('loadmsg').textContent=m;}
 function hideLoad(){document.getElementById('loader').style.display='none';}
-function showErr(m){const e=document.getElementById('errmsg');e.textContent=m;e.style.display='block';}
+function showErr(m){vibe('error');const e=document.getElementById('errmsg');e.textContent=m;e.style.display='block';}
 
 function getPrompt(){
 return `Extract the recipe from the provided content and return ONLY valid JSON with no markdown, no backticks, no extra text:
@@ -870,7 +856,7 @@ async function doExtract(){
   document.getElementById('errmsg').style.display='none';
   if(mode==='p'){if(!fb64){showErr('Please select an image first.');return;}showLoad('Reading your screenshot...');await extImg();}
   else if(mode==='u'){const u=document.getElementById('urlinp').value.trim();if(!u||!u.startsWith('http')){showErr('Please enter a valid URL starting with https://');return;}showLoad('Fetching recipe from website...');await extUrl(u);}
-  else{if(!dtxt){showErr('Please select a Word document first.');return;}showLoad('Reading your Word document...');await extDoc();}
+  else{if(!dtxt){showErr('Please select a file first.');return;}showLoad('Reading your document...');await extDoc();}
 }
 async function extImg(){
   try{const[hd,b64]=fb64.split(',');const mime=hd.match(/:(.*?);/)[1];proc(await callGroq([{inline_data:{mime_type:mime,data:b64}},{text:getPrompt()}]),fb64);}
@@ -920,12 +906,11 @@ function confirmSave(){
   const savedId=pendingRec.id;
   const savedTitle=pendingRec.title;
   const hasPhoto=!!pendingRec.imageData;
-  recs.unshift(pendingRec);save();
+  recs.unshift(pendingRec);save();vibe('save');
   showDetail(savedId);pendingRec=null;
   if(!hasPhoto)genFoodImage(savedId,savedTitle);
 }
 
-// ── Image search pipeline ─────────────────────────────────────────────────
 // ── Edit-mode image helpers ───────────────────────────────────────────────
 function setEditImgPreview(src,r){
   const el=document.getElementById('edit-img-preview');

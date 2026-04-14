@@ -47,10 +47,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 .srch{padding:12px 14px 6px;}
 .srch input{width:100%;background:white;border:1px solid var(--bds);border-radius:24px;padding:12px 18px;font-size:15px;font-family:Arial,sans-serif;color:var(--tx);outline:none;}
 .srch input:focus{border-color:var(--tc);}
-.chips{display:flex;gap:8px;overflow-x:auto;padding:6px 14px 10px;scrollbar-width:none;}
-.chips::-webkit-scrollbar{display:none;}
-.chip{background:white;border:1px solid var(--bds);border-radius:24px;padding:8px 16px;font-size:13px;font-family:Arial,sans-serif;white-space:nowrap;cursor:pointer;color:var(--mu);flex-shrink:0;}
-.chip.on{background:var(--tc);border-color:var(--tc);color:white;}
+
 .cat-filter-row{padding:6px 14px 10px;}
 .cat-filter-wrap{position:relative;display:flex;align-items:center;background:white;border:1.5px solid var(--bds);border-radius:24px;padding:0 14px;height:42px;gap:8px;transition:border-color 0.15s;}
 .cat-filter-wrap:focus-within{border-color:var(--tc);}
@@ -160,6 +157,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 @keyframes sp{to{transform:rotate(360deg);}}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 #loadmsg{font-size:15px;color:var(--mu);font-family:Arial,sans-serif;}
+#loader{display:none;position:fixed;inset:0;background:rgba(242,245,245,0.92);z-index:500;flex-direction:column;align-items:center;justify-content:center;gap:14px;}
 
 /* SETTINGS */
 .kinfo{background:#f0f7f0;border:1px solid #b0d8b0;color:#2a6a2a;padding:12px 14px;border-radius:12px;font-size:13px;font-family:Arial,sans-serif;margin-bottom:12px;display:none;}
@@ -210,16 +208,6 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
   </div>
 </div>
 
-<!-- CARD ACTION SHEET -->
-<div id="card-action-sheet" style="display:none;position:fixed;inset:0;z-index:400;">
-  <div onclick="closeCardSheet()" style="position:absolute;inset:0;background:rgba(0,0,0,0.45);"></div>
-  <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:white;border-radius:20px 20px 0 0;padding:16px 16px calc(16px + var(--safe-b));">
-    <div id="card-sheet-title" style="font-size:14px;color:var(--mu);font-family:Arial,sans-serif;text-align:center;padding:4px 0 14px;border-bottom:1px solid var(--bd);margin-bottom:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
-    <button onclick="cardSheetView()" style="width:100%;background:var(--tcl);border:none;color:var(--tcd);border-radius:14px;padding:14px;font-size:15px;font-family:Arial,sans-serif;cursor:pointer;margin-bottom:8px;text-align:left;">👁️ &nbsp;View Recipe</button>
-    <button onclick="cardSheetDelete()" style="width:100%;background:#fff0f0;border:1px solid #f0b0b0;color:#C05050;border-radius:14px;padding:14px;font-size:15px;font-family:Arial,sans-serif;cursor:pointer;margin-bottom:8px;text-align:left;">🗑️ &nbsp;Delete Recipe</button>
-    <button onclick="closeCardSheet()" style="width:100%;background:white;border:1.5px solid var(--bds);color:var(--mu);border-radius:14px;padding:14px;font-size:15px;font-family:Arial,sans-serif;cursor:pointer;">Cancel</button>
-  </div>
-</div>
 
 <!-- MULTI-SELECT TOOLBAR -->
 <div id="ms-toolbar">
