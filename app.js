@@ -288,11 +288,31 @@ function renderCats(){
   }
   document.getElementById('pempty').style.display='none';
   usedCats.forEach(c=>{
-    const n=recs.filter(r=>r.category===c).length;
+    // recs is newest-first, so the first match with an image is the latest saved
+    const catRecs=recs.filter(r=>r.category===c);
+    const n=catRecs.length;
+    const hero=catRecs.find(r=>r.imageData)||null;
+
     const d=document.createElement('div');d.className='ccard';
-    d.style.cssText=`background:${catColor(c)};border-color:transparent;`;
+    d.style.borderColor='transparent';
     d.onclick=()=>{vibe('tap');openCatDetail(c);};
-    d.innerHTML=`<span class="cico" style="font-size:36px;margin-bottom:10px;">${catEmoji(c)}</span><div class="cname" style="font-size:15px;font-weight:bold;">${c}</div><div class="ccnt">${n} recipe${n!==1?'s':''}</div>`;
+
+    // Shared overlay markup (sits on top of the image)
+    const overlay=`<div class="ccard-overlay"><span class="cico">${catEmoji(c)}</span><div class="cname">${c}</div><div class="ccnt">${n} recipe${n!==1?'s':''}</div></div>`;
+    // Fallback markup (used when there is no image)
+    const fallback=`<div class="ccard-fallback" style="background:${catColor(c)};position:absolute;inset:0;"><span class="cico">${catEmoji(c)}</span><div class="cname">${c}</div><div class="ccnt">${n} recipe${n!==1?'s':''}</div></div>`;
+
+    if(hero&&hero.imageData==='__idb__'){
+      // Render fallback immediately, then swap image in once IDB resolves
+      d.innerHTML=fallback;
+      ImgStore.get(hero.id).then(data=>{
+        if(data&&d.isConnected)d.innerHTML=`<img class="ccard-img" src="${data}"/>${overlay}`;
+      });
+    }else if(hero&&hero.imageData){
+      d.innerHTML=`<img class="ccard-img" src="${hero.imageData}"/>${overlay}`;
+    }else{
+      d.innerHTML=fallback;
+    }
     p.appendChild(d);
   });
 }
