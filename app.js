@@ -528,19 +528,20 @@ async function delRecipe(){if(!confirm('Delete this recipe?'))return;vibe('delet
 
 function resetAdd(){
   mode='p';fb64=null;dtxt=null;pendingRec=null;multiImgs=[];batchResults=[];
-  ['fip','dip'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('imgprev').src='';
-  document.getElementById('urlinp').value='';
-  document.getElementById('docname').textContent='';
-  document.getElementById('errmsg').style.display='none';
-  document.getElementById('catpanel').style.display='none';
-  document.getElementById('batchpanel').style.display='none';
-  document.getElementById('multi-count-badge').style.display='none';
-  document.getElementById('batch-done-btn').style.display='none';
+  ['fip','dip'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const _h=(id,prop,val)=>{const el=document.getElementById(id);if(el)el[prop]=val;};
+  _h('imgprev','src','');
+  _h('urlinp','value','');
+  _h('docname','textContent','');
+  ['errmsg','catpanel','batchpanel','multi-count-badge','batch-done-btn'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  _h('extractbtn','style.display','block');
   document.getElementById('extractbtn').style.display='block';
-  ['p','u','d'].forEach(x=>{document.getElementById('op-'+x).classList.toggle('on',x==='p');document.getElementById('sec-'+x).style.display='none';});
-  document.getElementById('op-p-hint').textContent='Tap to choose image';
-  document.getElementById('op-d-hint').textContent='Tap to choose file';
+  ['p','u','d'].forEach(x=>{
+    const op=document.getElementById('op-'+x);if(op)op.classList.toggle('on',x==='p');
+    const sec=document.getElementById('sec-'+x);if(sec)sec.style.display='none';
+  });
+  _h('op-p-hint','textContent','Tap to choose image');
+  _h('op-d-hint','textContent','Tap to choose file');
 }
 function selMode(m){
   const prev=mode;
