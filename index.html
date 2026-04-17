@@ -128,8 +128,14 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 .dmi strong{color:var(--br);display:block;font-size:14px;}
 .shd{font-size:10px;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:1.8px;color:var(--tc);margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--bd);}
 .ingl{list-style:none;}
-.ingl li{padding:10px 0;border-bottom:1px solid var(--bd);font-size:14px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;}
-.ingl li::before{content:"•";color:var(--tc);font-size:16px;line-height:1.3;flex-shrink:0;}
+.ingl li{padding:10px 0;border-bottom:1px solid var(--bd);font-size:14px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;cursor:pointer;transition:opacity 0.18s;}
+.ingl li::before{content:"•";color:var(--tc);font-size:16px;line-height:1.3;flex-shrink:0;transition:color 0.18s;}
+.ingl li.ticked{opacity:0.45;text-decoration:line-through;text-decoration-color:var(--tc);text-decoration-thickness:1.5px;}
+.ingl li.ticked::before{content:"✓";color:#2A8A8A;}
+.ing-reset-btn{background:none;border:1px solid var(--bds);border-radius:14px;padding:3px 10px;font-size:11px;font-family:Arial,sans-serif;color:var(--mu);cursor:pointer;transition:all 0.15s;display:none;}
+.ing-reset-btn.visible{display:inline-block;}
+.ing-reset-btn:active{background:var(--tcl);border-color:var(--tc);color:var(--tcd);}
+.ing-section-hdr{display:flex;align-items:center;justify-content:space-between;}
 .stepl{list-style:none;}
 .stepl li{padding:10px 0;border-bottom:1px solid var(--bd);font-size:14px;line-height:1.7;display:flex;gap:12px;}
 .snum{background:var(--tc);color:white;min-width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:Arial,sans-serif;flex-shrink:0;margin-top:2px;}
@@ -421,7 +427,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
             </button>
           </div>
           <div class="dmeta" id="dmeta"></div>
-          <div class="shd">Ingredients</div>
+          <div class="shd ing-section-hdr">Ingredients<button class="ing-reset-btn" id="ing-reset-btn" onclick="resetIngTicks()">Reset</button></div>
           <ul class="ingl" id="dings"></ul>
           <div class="shd">Instructions</div>
           <ol class="stepl" id="dsteps"></ol>
@@ -585,5 +591,36 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 
 </div>
 <script src="app.js" defer></script>
+<script>
+// ── Ingredient tick-off ──────────────────────────────────────────────
+(function(){
+  // Reset the button whenever app.js re-renders the ingredient list
+  const obs = new MutationObserver(syncResetBtn);
+  const target = document.getElementById('dings');
+  if(target) obs.observe(target, {childList:true});
+
+  // Tap to tick — event delegation so it works after every app.js render
+  document.addEventListener('click', function(e){
+    const li = e.target.closest('#dings li');
+    if(!li) return;
+    li.classList.toggle('ticked');
+    // Use app.js haptic system if available
+    if(typeof vibe === 'function') vibe('toggle');
+    syncResetBtn();
+  });
+
+  function syncResetBtn(){
+    const btn = document.getElementById('ing-reset-btn');
+    if(!btn) return;
+    btn.classList.toggle('visible', !!document.querySelector('#dings li.ticked'));
+  }
+
+  window.resetIngTicks = function(){
+    document.querySelectorAll('#dings li.ticked').forEach(li => li.classList.remove('ticked'));
+    if(typeof vibe === 'function') vibe('tap');
+    syncResetBtn();
+  };
+})();
+</script>
 </body>
 </html>
