@@ -528,38 +528,38 @@ async function delRecipe(){if(!confirm('Delete this recipe?'))return;vibe('delet
 
 function resetAdd(){
   mode='p';fb64=null;dtxt=null;pendingRec=null;multiImgs=[];batchResults=[];
-  ['fip','dip'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  const _h=(id,prop,val)=>{const el=document.getElementById(id);if(el)el[prop]=val;};
-  _h('imgprev','src','');
-  _h('urlinp','value','');
-  _h('docname','textContent','');
-  ['errmsg','catpanel','batchpanel','multi-count-badge','batch-done-btn'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
-  _h('extractbtn','style.display','block');
-  document.getElementById('extractbtn').style.display='block';
-  ['p','u','d'].forEach(x=>{
-    const op=document.getElementById('op-'+x);if(op)op.classList.toggle('on',x==='p');
-    const sec=document.getElementById('sec-'+x);if(sec)sec.style.display='none';
+  ['fip','dip'].forEach(id=>{try{const el=document.getElementById(id);if(el)el.value='';}catch(e){}});
+  const el_imgprev=document.getElementById('imgprev');if(el_imgprev)el_imgprev.src='';
+  const el_url=document.getElementById('urlinp');if(el_url)el_url.value='';
+  const el_doc=document.getElementById('docname');if(el_doc)el_doc.textContent='';
+  ['errmsg','catpanel','batchpanel','multi-count-badge','batch-done-btn'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.style.display='none';
   });
-  _h('op-p-hint','textContent','Tap to choose image');
-  _h('op-d-hint','textContent','Tap to choose file');
+  const exbtn=document.getElementById('extractbtn');if(exbtn)exbtn.style.display='block';
+  ['p','u','d'].forEach(x=>{
+    const op=document.getElementById('op-'+x);
+    if(op)op.classList.toggle('on',x==='p');
+    const sec=document.getElementById('sec-'+x);
+    if(sec)sec.style.display='none';
+  });
+  const ph=document.getElementById('op-p-hint');if(ph)ph.textContent='Tap to choose image';
+  const dh=document.getElementById('op-d-hint');if(dh)dh.textContent='Tap to choose file';
 }
 function selMode(m){
-  const prev=mode;
   mode=m;
-  ['p','u','d'].forEach(x=>document.getElementById('op-'+x).classList.toggle('on',x===m));
-  // Hide all content sections first
-  ['p','u','d'].forEach(x=>document.getElementById('sec-'+x).style.display='none');
+  ['p','u','d'].forEach(x=>{
+    const op=document.getElementById('op-'+x);if(op)op.classList.toggle('on',x===m);
+    const sec=document.getElementById('sec-'+x);if(sec)sec.style.display='none';
+  });
   if(m==='p'){
-    // Open image picker immediately; show preview section only if already have image
-    if(fb64){document.getElementById('sec-p').style.display='block';}
-    else{document.getElementById('fip').click();}
-  } else if(m==='u'){
-    document.getElementById('sec-u').style.display='block';
-    setTimeout(()=>document.getElementById('urlinp').focus(),50);
-  } else if(m==='d'){
-    // Open doc picker immediately; show confirmation section only if already have doc
-    if(dtxt){document.getElementById('sec-d').style.display='block';}
-    else{document.getElementById('dip').click();}
+    if(fb64||multiImgs.length){const s=document.getElementById('sec-p');if(s)s.style.display='block';}
+    else{const f=document.getElementById('fip');if(f)f.click();}
+  }else if(m==='u'){
+    const s=document.getElementById('sec-u');if(s)s.style.display='block';
+    setTimeout(()=>{const u=document.getElementById('urlinp');if(u)u.focus();},50);
+  }else if(m==='d'){
+    if(dtxt){const s=document.getElementById('sec-d');if(s)s.style.display='block';}
+    else{const f=document.getElementById('dip');if(f)f.click();}
   }
 }
 // ── Image compression ─────────────────────────────────────────────────────
