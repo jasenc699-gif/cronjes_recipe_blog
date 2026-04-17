@@ -533,27 +533,36 @@ function resetAdd(){
   document.getElementById('errmsg').style.display='none';
   document.getElementById('catpanel').style.display='none';
   document.getElementById('extractbtn').style.display='block';
-  ['p','u','d'].forEach(x=>{document.getElementById('op-'+x).classList.toggle('on',x==='p');document.getElementById('sec-'+x).style.display='none';});
+  // Reset search panel
+  const wi=document.getElementById('wsrch-inp');if(wi)wi.value='';
+  const wst=document.getElementById('wsrch-status');if(wst){wst.style.display='none';wst.textContent='';}
+  const wr=document.getElementById('wsrch-results');if(wr)wr.innerHTML='';
+  ['p','u','d','s'].forEach(x=>{document.getElementById('op-'+x).classList.toggle('on',x==='p');document.getElementById('sec-'+x).style.display='none';});
   document.getElementById('op-p-hint').textContent='Tap to choose image';
   document.getElementById('op-d-hint').textContent='Tap to choose file';
 }
 function selMode(m){
   const prev=mode;
   mode=m;
-  ['p','u','d'].forEach(x=>document.getElementById('op-'+x).classList.toggle('on',x===m));
+  ['p','u','d','s'].forEach(x=>document.getElementById('op-'+x).classList.toggle('on',x===m));
   // Hide all content sections first
-  ['p','u','d'].forEach(x=>document.getElementById('sec-'+x).style.display='none');
+  ['p','u','d','s'].forEach(x=>document.getElementById('sec-'+x).style.display='none');
   if(m==='p'){
     // Open image picker immediately; show preview section only if already have image
     if(fb64){document.getElementById('sec-p').style.display='block';}
     else{document.getElementById('fip').click();}
   } else if(m==='u'){
     document.getElementById('sec-u').style.display='block';
+    document.getElementById('extractbtn').style.display='block';
     setTimeout(()=>document.getElementById('urlinp').focus(),50);
   } else if(m==='d'){
     // Open doc picker immediately; show confirmation section only if already have doc
     if(dtxt){document.getElementById('sec-d').style.display='block';}
     else{document.getElementById('dip').click();}
+  } else if(m==='s'){
+    document.getElementById('sec-s').style.display='block';
+    document.getElementById('extractbtn').style.display='none';
+    setTimeout(()=>document.getElementById('wsrch-inp').focus(),50);
   }
 }
 // ── Image compression ─────────────────────────────────────────────────────
@@ -900,6 +909,63 @@ async function extUrl(u){
 async function extDoc(){
   try{proc(await callGroq([{text:`Word document text:\n\n${dtxt.slice(0,7000)}\n\n${getPrompt()}`}]),null);}
   catch(e){hideLoad();showErr('Could not extract recipe. ('+(e.message||e)+')');}
+}
+
+async function doWebSearch(){
+  const q=(document.getElementById('wsrch-inp').value||'').trim();
+  if(!q){document.getElementById('wsrch-inp').focus();return;}
+  const key=getKey();
+  if(!key){showErr('No API key. Tap ⚙️ Settings.');return;}
+  const status=document.getElementById('wsrch-status');
+  const list=document.getElementById('wsrch-results');
+  status.textContent='Searching for recipes…';
+  status.style.color='var(--mu)';
+  status.style.display='block';
+  list.innerHTML='';
+  document.getElementById('errmsg').style.display='none';
+  vibe('tap');
+  try{
+    const resp=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'compound-beta',
+        messages:[{role:'user',content:`Search the web for recipes for: "${q}". Find up to 6 different recipe pages from popular cooking websites (e.g. allrecipes.com, bbcgoodfood.com, food.com, seriouseats.com, tasty.co, delish.com, etc). Return ONLY a valid JSON array, no markdown, no explanation:\n[{"title":"Full Recipe Title","url":"https://exact-recipe-page-url","site":"SiteName","description":"One sentence description"}]\nOnly include real, working URLs pointing directly to a recipe page, not a homepage or search page.`}],
+        max_tokens:900
+      })
+    });
+    const data=await resp.json();
+    if(data.error)throw new Error(data.error.message||'Search failed');
+    const text=data.choices?.[0]?.message?.content||'';
+    const match=text.match(/\[[\s\S]*?\]/);
+    if(!match)throw new Error('No results returned');
+    const items=JSON.parse(match[0]).filter(r=>r&&typeof r.url==='string'&&r.url.startsWith('http'));
+    if(!items.length)throw new Error('No recipe links found — try a more specific dish name');
+    status.style.display='none';
+    items.forEach(item=>{
+      let hostname='';
+      try{hostname=new URL(item.url).hostname.replace('www.','');}catch(e){hostname=item.site||'';}
+      const li=document.createElement('li');
+      li.className='srec-item';
+      li.innerHTML=`<div class="srec-item-title">${item.title||'Recipe'}</div><div class="srec-item-site">🔗 ${item.site||hostname}</div>${item.description?`<div class="srec-item-desc">${item.description}</div>`:''}`;
+      li.onclick=()=>pickSearchResult(item.url,item.title||q);
+      list.appendChild(li);
+    });
+  }catch(e){
+    status.textContent='Search failed: '+(e.message||e);
+    status.style.color='#a03030';
+    status.style.display='block';
+  }
+}
+
+async function pickSearchResult(url,title){
+  vibe('tap');
+  document.getElementById('wsrch-results').innerHTML='';
+  document.getElementById('wsrch-status').style.display='none';
+  let hostname='';
+  try{hostname=new URL(url).hostname.replace('www.','');}catch(e){hostname=url;}
+  showLoad('Fetching recipe from '+hostname+'…');
+  await extUrl(url);
 }
 
 function proc(raw,imgData){

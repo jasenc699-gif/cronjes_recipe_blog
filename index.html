@@ -93,7 +93,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 .ntab.on{color:var(--tc);}
 
 /* ADD SCREEN */
-.addopts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:16px;}
+.addopts{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;}
 .addopt{background:white;border:2px solid var(--bd);border-radius:14px;padding:16px 8px;text-align:center;cursor:pointer;transition:all 0.12s;min-height:82px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
 .addopt.on{border-color:var(--tc);background:var(--tcl);}
 .addopt .ico{font-size:26px;display:block;margin-bottom:8px;}
@@ -136,6 +136,14 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 .ing-reset-btn.visible{display:inline-block;}
 .ing-reset-btn:active{background:var(--tcl);border-color:var(--tc);color:var(--tcd);}
 .ing-section-hdr{display:flex;align-items:center;justify-content:space-between;}
+/* Web search results */
+.srec-list{list-style:none;padding:0;margin-top:10px;}
+.srec-item{background:white;border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:all 0.12s;display:flex;flex-direction:column;gap:3px;}
+.srec-item:active{background:var(--tcl);border-color:var(--tc);}
+.srec-item-title{font-size:14px;color:var(--tx);line-height:1.4;}
+.srec-item-site{font-size:11px;font-family:Arial,sans-serif;color:var(--tc);margin-top:1px;}
+.srec-item-desc{font-size:12px;font-family:Arial,sans-serif;color:var(--mu);line-height:1.4;margin-top:3px;}
+.srec-status{font-size:13px;font-family:Arial,sans-serif;color:var(--mu);margin-top:10px;display:none;text-align:center;padding:8px 0;}
 .stepl{list-style:none;}
 .stepl li{padding:10px 0;border-bottom:1px solid var(--bd);font-size:14px;line-height:1.7;display:flex;gap:12px;}
 .snum{background:var(--tc);color:white;min-width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:Arial,sans-serif;flex-shrink:0;margin-top:2px;}
@@ -358,6 +366,11 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
           <div class="lbl">Document</div>
           <div id="op-d-hint" class="addopt-hint">Tap to choose file</div>
         </div>
+        <div class="addopt" id="op-s" onclick="selMode('s')">
+          <span class="ico">🔍</span>
+          <div class="lbl">Search Web</div>
+          <div class="addopt-hint">Find by dish name</div>
+        </div>
       </div>
 
       <!-- Image preview (shown after photo selected) -->
@@ -376,6 +389,17 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
       <div id="sec-d" class="fsec" style="display:none">
         <div id="docname" style="font-size:14px;font-family:Arial,sans-serif;color:var(--tc);background:var(--tcl);border-radius:12px;padding:12px 14px;line-height:1.5;"></div>
         <button class="pbtn sec" style="margin-top:10px;" onclick="document.getElementById('dip').click()">Choose Different File</button>
+      </div>
+
+      <!-- Web search (shown when Search Web mode selected) -->
+      <div id="sec-s" class="fsec" style="display:none">
+        <label class="flbl">What recipe are you looking for?</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" class="finp" id="wsrch-inp" placeholder="e.g. chicken tikka masala" style="flex:1;margin:0;" onkeydown="if(event.key==='Enter')doWebSearch()"/>
+          <button class="pbtn" style="width:auto;margin-top:0;padding:13px 18px;font-size:14px;font-family:Arial,sans-serif;flex-shrink:0;" onclick="doWebSearch()">Search</button>
+        </div>
+        <div class="srec-status" id="wsrch-status"></div>
+        <ul class="srec-list" id="wsrch-results"></ul>
       </div>
       <div style="padding:0 14px;">
         <div class="errmsg" id="errmsg"></div>
