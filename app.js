@@ -28,6 +28,8 @@ let recs=[],tab='c',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=
 let _openCat=null;
 let _prevTab='c',_prevCat=null;
 let multiSelectMode=false,selectedIds=new Set();
+let multiImgs=[];    // [{fb64, name}] — multiple screenshots queued for batch extraction
+let batchResults=[]; // [{rec, imgData, status}] — extracted recipes awaiting individual save
 
 // ── IndexedDB Image Store ─────────────────────────────────────────────────
 // Stores base64 image data separately from localStorage to avoid quota issues.
@@ -525,44 +527,38 @@ async function delRecipe(){if(!confirm('Delete this recipe?'))return;vibe('delet
 
 
 function resetAdd(){
-  mode='p';fb64=null;dtxt=null;pendingRec=null;
+  mode='p';fb64=null;dtxt=null;pendingRec=null;multiImgs=[];batchResults=[];
   ['fip','dip'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('imgprev').src='';
   document.getElementById('urlinp').value='';
   document.getElementById('docname').textContent='';
   document.getElementById('errmsg').style.display='none';
   document.getElementById('catpanel').style.display='none';
+  document.getElementById('batchpanel').style.display='none';
+  document.getElementById('multi-count-badge').style.display='none';
+  document.getElementById('batch-done-btn').style.display='none';
   document.getElementById('extractbtn').style.display='block';
-  // Reset search panel
-  const wi=document.getElementById('wsrch-inp');if(wi)wi.value='';
-  const wst=document.getElementById('wsrch-status');if(wst){wst.style.display='none';wst.textContent='';}
-  const wr=document.getElementById('wsrch-results');if(wr)wr.innerHTML='';
-  ['p','u','d','s'].forEach(x=>{document.getElementById('op-'+x).classList.toggle('on',x==='p');document.getElementById('sec-'+x).style.display='none';});
+  ['p','u','d'].forEach(x=>{document.getElementById('op-'+x).classList.toggle('on',x==='p');document.getElementById('sec-'+x).style.display='none';});
   document.getElementById('op-p-hint').textContent='Tap to choose image';
   document.getElementById('op-d-hint').textContent='Tap to choose file';
 }
 function selMode(m){
   const prev=mode;
   mode=m;
-  ['p','u','d','s'].forEach(x=>document.getElementById('op-'+x).classList.toggle('on',x===m));
+  ['p','u','d'].forEach(x=>document.getElementById('op-'+x).classList.toggle('on',x===m));
   // Hide all content sections first
-  ['p','u','d','s'].forEach(x=>document.getElementById('sec-'+x).style.display='none');
+  ['p','u','d'].forEach(x=>document.getElementById('sec-'+x).style.display='none');
   if(m==='p'){
     // Open image picker immediately; show preview section only if already have image
     if(fb64){document.getElementById('sec-p').style.display='block';}
     else{document.getElementById('fip').click();}
   } else if(m==='u'){
     document.getElementById('sec-u').style.display='block';
-    document.getElementById('extractbtn').style.display='block';
     setTimeout(()=>document.getElementById('urlinp').focus(),50);
   } else if(m==='d'){
     // Open doc picker immediately; show confirmation section only if already have doc
     if(dtxt){document.getElementById('sec-d').style.display='block';}
     else{document.getElementById('dip').click();}
-  } else if(m==='s'){
-    document.getElementById('sec-s').style.display='block';
-    document.getElementById('extractbtn').style.display='none';
-    setTimeout(()=>document.getElementById('wsrch-inp').focus(),50);
   }
 }
 // ── Image compression ─────────────────────────────────────────────────────
@@ -589,16 +585,40 @@ function compressImage(dataUrl,maxPx=900,quality=0.72){
 }
 
 function onImg(e){
-  const f=e.target.files[0];if(!f)return;
-  // Allow up to 15 MB source — compression will shrink it to ~100-200 KB
-  if(f.size>15728640){showErr('Image too large (max 15MB).');return;}
-  const rd=new FileReader();rd.onload=async ev=>{
-    const compressed=await compressImage(ev.target.result);
-    fb64=compressed;
-    const im=document.getElementById('imgprev');im.src=fb64;
+  const files=Array.from(e.target.files);
+  if(!files.length)return;
+  multiImgs=[];
+  const badge=document.getElementById('multi-count-badge');
+
+  // Load and compress all selected files in parallel
+  const compress=f=>new Promise(resolve=>{
+    if(f.size>15728640){resolve(null);return;}
+    const rd=new FileReader();
+    rd.onload=async ev=>{
+      const c=await compressImage(ev.target.result);
+      resolve({fb64:c,name:f.name});
+    };
+    rd.readAsDataURL(f);
+  });
+
+  (async()=>{
+    const results=await Promise.all(files.map(compress));
+    multiImgs=results.filter(Boolean);
+    if(!multiImgs.length){showErr('No valid images could be loaded.');return;}
+
+    fb64=multiImgs[0].fb64;
+    document.getElementById('imgprev').src=fb64;
     document.getElementById('sec-p').style.display='block';
-    document.getElementById('op-p-hint').textContent='Image ready ✓';
-  };rd.readAsDataURL(f);
+
+    if(multiImgs.length===1){
+      document.getElementById('op-p-hint').textContent='Image ready ✓';
+      badge.style.display='none';
+    } else {
+      document.getElementById('op-p-hint').textContent=multiImgs.length+' images ready ✓';
+      badge.style.display='block';
+      badge.textContent='📷 '+multiImgs.length+' screenshots selected — AI will extract each recipe one by one';
+    }
+  })();
 }
 async function onDoc(e){
   const f=e.target.files[0];if(!f)return;
@@ -883,13 +903,153 @@ async function testKey(){
 
 async function doExtract(){
   document.getElementById('errmsg').style.display='none';
-  if(mode==='p'){if(!fb64){showErr('Please select an image first.');return;}showLoad('Reading your screenshot...');await extImg();}
+  if(mode==='p'){
+    if(!multiImgs.length){showErr('Please select an image first.');return;}
+    if(multiImgs.length>1){
+      await doBatchExtract();
+    } else {
+      showLoad('Reading your screenshot...');await extImg();
+    }
+  }
   else if(mode==='u'){const u=document.getElementById('urlinp').value.trim();if(!u||!u.startsWith('http')){showErr('Please enter a valid URL starting with https://');return;}showLoad('Fetching recipe from website...');await extUrl(u);}
-  else{if(!dtxt){showErr('Please select a file first.');return;}showLoad('Reading your document...');await extDoc();}
+  else{if(!dtxt){showErr('Please select a file first.');return;}showLoad('Reading your document...');await extDocSmart();}
 }
 async function extImg(){
-  try{const[hd,b64]=fb64.split(',');const mime=hd.match(/:(.*?);/)[1];proc(await callGroq([{inline_data:{mime_type:mime,data:b64}},{text:getPrompt()}]),fb64);}
+  try{
+    // Extra compression before API call to avoid 413 Entity Too Large
+    const apiImg=await compressImage(fb64,600,0.60);
+    const[hd,b64]=apiImg.split(',');const mime=hd.match(/:(.*?);/)[1];
+    proc(await callGroq([{inline_data:{mime_type:mime,data:b64}},{text:getPrompt()}]),fb64);
+  }
   catch(e){hideLoad();showErr('Could not read image. ('+(e.message||e)+')');}
+}
+
+// ── Batch extraction (multiple screenshots) ───────────────────────────────
+async function doBatchExtract(){
+  const total=multiImgs.length;
+  batchResults=[];
+  for(let i=0;i<total;i++){
+    const img=multiImgs[i];
+    showLoad('Extracting recipe '+(i+1)+' of '+total+'…');
+    try{
+      const apiImg=await compressImage(img.fb64,600,0.60);
+      const[hd,b64]=apiImg.split(',');const mime=hd.match(/:(.*?);/)[1];
+      const raw=await callGroq([{inline_data:{mime_type:mime,data:b64}},{text:getPrompt()}]);
+      const d=JSON.parse(raw.replace(/```json|```/g,'').trim());
+      const aiCat=allCats().includes(d.category)?d.category:'Other';
+      batchResults.push({
+        rec:{id:(Date.now()+i*7).toString(),title:d.title||'Untitled Recipe',servings:d.servings||null,time:d.time||null,cuisine:d.cuisine||null,category:aiCat,ingredients:Array.isArray(d.ingredients)?d.ingredients:[],steps:Array.isArray(d.steps)?d.steps:[],notes:d.notes||null,imageData:null,emoji:FE[Math.floor(Math.random()*FE.length)],savedAt:new Date().toISOString(),favourite:false,comments:[]},
+        imgData:img.fb64,status:'pending'
+      });
+    }catch(err){
+      batchResults.push({
+        rec:{id:(Date.now()+i*7).toString(),title:img.name.replace(/\.[^.]+$/,'')||('Recipe '+(i+1)),category:'Other',ingredients:[],steps:[],emoji:'🍴',savedAt:new Date().toISOString(),favourite:false,comments:[]},
+        imgData:img.fb64,status:'error',error:err.message
+      });
+    }
+  }
+  hideLoad();
+  showBatchPanel();
+}
+
+function showBatchPanel(){
+  document.getElementById('catpanel').style.display='none';
+  document.getElementById('extractbtn').style.display='none';
+  document.getElementById('batchpanel').style.display='block';
+  renderBatchList();
+  document.querySelector('#sadd .sa').scrollTop=9999;
+}
+
+function renderBatchList(){
+  const list=document.getElementById('batchlist');
+  list.innerHTML='';
+  const active=batchResults.filter(r=>r.status==='pending'||r.status==='error');
+  active.forEach(item=>{
+    const i=batchResults.indexOf(item);
+    const div=document.createElement('div');
+    div.className='batch-item';
+    div.id='batch-item-'+i;
+    const thumbHtml=item.imgData
+      ?`<img src="${item.imgData}" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:9px;"/>`
+      :`<span style="font-size:22px;">${item.rec.emoji||'🍴'}</span>`;
+    div.innerHTML=`
+      <div style="background:${catColor(item.rec.category)};width:58px;height:58px;border-radius:10px;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+        ${thumbHtml}
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:bold;line-height:1.35;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.rec.title}</div>
+        ${item.status==='error'?'<div style="font-size:11px;color:#C05050;font-family:Arial,sans-serif;margin-bottom:4px;">⚠️ Extraction failed — will save as-is</div>':''}
+        <select data-idx="${i}" style="width:100%;background:var(--bg);border:1px solid var(--bds);border-radius:8px;padding:5px 8px;font-size:12px;font-family:Arial,sans-serif;color:var(--tx);outline:none;">
+          ${allCats().map(c=>`<option value="${c}"${c===item.rec.category?' selected':''}>${catEmoji(c)} ${c}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;margin-left:4px;">
+        <button onclick="saveBatchItem(${i})" style="background:var(--tc);color:white;border:none;border-radius:20px;padding:9px 14px;font-size:12px;font-family:Arial,sans-serif;cursor:pointer;">Save ✓</button>
+        <button onclick="skipBatchItem(${i})" style="background:none;border:1.5px solid var(--bd);border-radius:20px;padding:7px 12px;font-size:11px;font-family:Arial,sans-serif;color:var(--mu);cursor:pointer;">Skip</button>
+      </div>`;
+    list.appendChild(div);
+  });
+
+  const pending=batchResults.filter(r=>r.status==='pending').length;
+  const saved=batchResults.filter(r=>r.status==='saved').length;
+  const errors=batchResults.filter(r=>r.status==='error').length;
+  let txt=pending+' recipe'+(pending!==1?'s':'')+' to save';
+  if(saved)txt+=' · '+saved+' saved';
+  if(errors)txt+=' · '+errors+' failed';
+  document.getElementById('batch-status').textContent=txt;
+
+  if(!active.length){
+    document.getElementById('batch-status').textContent='All done! '+saved+' recipe'+(saved!==1?'s':'')+' saved ✓';
+    document.getElementById('batch-done-btn').style.display='block';
+    buildChips();render();
+  }
+}
+
+function saveBatchItem(i){
+  const item=batchResults[i];if(!item)return;
+  const sel=document.querySelector('#batch-item-'+i+' select');
+  if(sel)item.rec.category=sel.value;
+  if(item.imgData){item.rec.imageData='__idb__';ImgStore.set(item.rec.id,item.imgData);}
+  const savedId=item.rec.id,savedTitle=item.rec.title,hadPhoto=!!item.rec.imageData;
+  item.status='saved';
+  recs.unshift(item.rec);save();vibe('save');
+  if(!hadPhoto)genFoodImage(savedId,savedTitle);
+  renderBatchList();
+}
+
+function skipBatchItem(i){
+  const item=batchResults[i];if(!item)return;
+  item.status='skipped';vibe('tap');renderBatchList();
+}
+
+// ── Smart document extraction (single or multi-recipe) ────────────────────
+async function extDocSmart(){
+  try{
+    const multiPrompt=`Extract ALL recipes from this document. Return ONLY a valid JSON array (even if there is only one recipe):
+[{"title":"Recipe Name","servings":"4 servings","time":"30 mins","cuisine":"Italian","category":"Dinner","ingredients":["200g pasta"],"steps":["Boil pasta."],"notes":"Tips here"}]
+Pick categories from: ${allCats().join(', ')}. ingredients and steps must be arrays of strings. Unknown values use null.`;
+    const raw=await callGroq([{text:`Document text:\n\n${dtxt.slice(0,7500)}\n\n${multiPrompt}`}]);
+    const arr=JSON.parse(raw.replace(/```json|```/g,'').trim());
+    if(!Array.isArray(arr)||!arr.length)throw new Error('not-array');
+    if(arr.length===1){
+      // Single recipe — use normal single-save flow
+      proc(JSON.stringify(arr[0]),null);
+    } else {
+      // Multiple recipes — batch review flow
+      batchResults=arr.map((d,i)=>{
+        const aiCat=allCats().includes(d.category)?d.category:'Other';
+        return {
+          rec:{id:(Date.now()+i*7).toString(),title:d.title||'Untitled Recipe',servings:d.servings||null,time:d.time||null,cuisine:d.cuisine||null,category:aiCat,ingredients:Array.isArray(d.ingredients)?d.ingredients:[],steps:Array.isArray(d.steps)?d.steps:[],notes:d.notes||null,imageData:null,emoji:FE[Math.floor(Math.random()*FE.length)],savedAt:new Date().toISOString(),favourite:false,comments:[]},
+          imgData:null,status:'pending'
+        };
+      });
+      hideLoad();showBatchPanel();
+    }
+  }catch(e){
+    // Fallback: single-recipe extraction with original prompt
+    hideLoad();showLoad('Extracting recipe…');
+    await extDoc();
+  }
 }
 async function fetchViaProxy(u){
   const proxies=[()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`),()=>fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`),()=>fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`)];
@@ -909,63 +1069,6 @@ async function extUrl(u){
 async function extDoc(){
   try{proc(await callGroq([{text:`Word document text:\n\n${dtxt.slice(0,7000)}\n\n${getPrompt()}`}]),null);}
   catch(e){hideLoad();showErr('Could not extract recipe. ('+(e.message||e)+')');}
-}
-
-async function doWebSearch(){
-  const q=(document.getElementById('wsrch-inp').value||'').trim();
-  if(!q){document.getElementById('wsrch-inp').focus();return;}
-  const key=getKey();
-  if(!key){showErr('No API key. Tap ⚙️ Settings.');return;}
-  const status=document.getElementById('wsrch-status');
-  const list=document.getElementById('wsrch-results');
-  status.textContent='Searching for recipes…';
-  status.style.color='var(--mu)';
-  status.style.display='block';
-  list.innerHTML='';
-  document.getElementById('errmsg').style.display='none';
-  vibe('tap');
-  try{
-    const resp=await fetch('https://api.groq.com/openai/v1/chat/completions',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'compound-beta',
-        messages:[{role:'user',content:`Search the web for recipes for: "${q}". Find up to 6 different recipe pages from popular cooking websites (e.g. allrecipes.com, bbcgoodfood.com, food.com, seriouseats.com, tasty.co, delish.com, etc). Return ONLY a valid JSON array, no markdown, no explanation:\n[{"title":"Full Recipe Title","url":"https://exact-recipe-page-url","site":"SiteName","description":"One sentence description"}]\nOnly include real, working URLs pointing directly to a recipe page, not a homepage or search page.`}],
-        max_tokens:900
-      })
-    });
-    const data=await resp.json();
-    if(data.error)throw new Error(data.error.message||'Search failed');
-    const text=data.choices?.[0]?.message?.content||'';
-    const match=text.match(/\[[\s\S]*?\]/);
-    if(!match)throw new Error('No results returned');
-    const items=JSON.parse(match[0]).filter(r=>r&&typeof r.url==='string'&&r.url.startsWith('http'));
-    if(!items.length)throw new Error('No recipe links found — try a more specific dish name');
-    status.style.display='none';
-    items.forEach(item=>{
-      let hostname='';
-      try{hostname=new URL(item.url).hostname.replace('www.','');}catch(e){hostname=item.site||'';}
-      const li=document.createElement('li');
-      li.className='srec-item';
-      li.innerHTML=`<div class="srec-item-title">${item.title||'Recipe'}</div><div class="srec-item-site">🔗 ${item.site||hostname}</div>${item.description?`<div class="srec-item-desc">${item.description}</div>`:''}`;
-      li.onclick=()=>pickSearchResult(item.url,item.title||q);
-      list.appendChild(li);
-    });
-  }catch(e){
-    status.textContent='Search failed: '+(e.message||e);
-    status.style.color='#a03030';
-    status.style.display='block';
-  }
-}
-
-async function pickSearchResult(url,title){
-  vibe('tap');
-  document.getElementById('wsrch-results').innerHTML='';
-  document.getElementById('wsrch-status').style.display='none';
-  let hostname='';
-  try{hostname=new URL(url).hostname.replace('www.','');}catch(e){hostname=url;}
-  showLoad('Fetching recipe from '+hostname+'…');
-  await extUrl(url);
 }
 
 function proc(raw,imgData){
@@ -1051,18 +1154,24 @@ async function showImgPicker(query){
         headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},
         body:JSON.stringify({
           model:'compound-beta-mini',
-          messages:[{role:'user',content:`Search the web and find 6 high-quality food photography image URLs for the dish: "${query}". Look on recipe sites, food blogs, and cooking websites. Return ONLY a raw JSON array of direct image URLs (ending in .jpg .jpeg .png or .webp). No markdown, no explanation, just the JSON array. Example format: ["https://example.com/image.jpg","https://..."]`}],
-          max_tokens:600
+          messages:[{role:'user',content:`Find 6 high-quality food photography image URLs for: "${query.slice(0,80)}". Return ONLY a JSON array of direct image URLs ending in .jpg .jpeg .png or .webp. No markdown, no explanation.`}],
+          max_tokens:400
         })
       });
-      const data=await resp.json();
-      const text=data.choices?.[0]?.message?.content||'';
-      const match=text.match(/\[[\s\S]*?\]/);
-      if(match){
-        const parsed=JSON.parse(match[0]);
-        urls=parsed.filter(u=>typeof u==='string'&&u.startsWith('http'));
+      if(resp.ok){
+        const data=await resp.json();
+        const text=data.choices?.[0]?.message?.content||'';
+        const match=text.match(/\[[\s\S]*?\]/);
+        if(match){
+          const parsed=JSON.parse(match[0]);
+          urls=parsed.filter(u=>typeof u==='string'&&u.startsWith('http'));
+        }
       }
-    }catch(e){}
+      // Non-OK status (413, 429, etc.) — silently fall through to MealDB/Pollinations
+    }catch(e){
+      // Network or parse error — silently fall through
+      console.warn('cronjes: image search unavailable:',e.message);
+    }
   }
 
   // 2. Fallback — MealDB real photos + Pollinations AI generation
