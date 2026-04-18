@@ -532,11 +532,12 @@ function resetAdd(){
   const el_imgprev=document.getElementById('imgprev');if(el_imgprev)el_imgprev.src='';
   const el_url=document.getElementById('urlinp');if(el_url)el_url.value='';
   const el_doc=document.getElementById('docname');if(el_doc)el_doc.textContent='';
+  const el_srch=document.getElementById('searchinp');if(el_srch)el_srch.value='';
   ['errmsg','catpanel','batchpanel','multi-count-badge','batch-done-btn'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.style.display='none';
   });
   const exbtn=document.getElementById('extractbtn');if(exbtn)exbtn.style.display='block';
-  ['p','u','d'].forEach(x=>{
+  ['p','u','d','s'].forEach(x=>{
     const op=document.getElementById('op-'+x);
     if(op)op.classList.toggle('on',x==='p');
     const sec=document.getElementById('sec-'+x);
@@ -547,7 +548,7 @@ function resetAdd(){
 }
 function selMode(m){
   mode=m;
-  ['p','u','d'].forEach(x=>{
+  ['p','u','d','s'].forEach(x=>{
     const op=document.getElementById('op-'+x);if(op)op.classList.toggle('on',x===m);
     const sec=document.getElementById('sec-'+x);if(sec)sec.style.display='none';
   });
@@ -560,6 +561,9 @@ function selMode(m){
   }else if(m==='d'){
     if(dtxt){const s=document.getElementById('sec-d');if(s)s.style.display='block';}
     else{const f=document.getElementById('dip');if(f)f.click();}
+  }else if(m==='s'){
+    const s=document.getElementById('sec-s');if(s)s.style.display='block';
+    setTimeout(()=>{const si=document.getElementById('searchinp');if(si)si.focus();},50);
   }
 }
 // ── Image compression ─────────────────────────────────────────────────────
@@ -906,23 +910,41 @@ async function doExtract(){
   document.getElementById('errmsg').style.display='none';
   if(mode==='p'){
     if(!multiImgs.length){showErr('Please select an image first.');return;}
-    if(multiImgs.length>1){
-      await doBatchExtract();
-    } else {
-      showLoad('Reading your screenshot...');await extImg();
-    }
+    if(multiImgs.length>1){await doBatchExtract();}
+    else{showLoad('Reading your screenshot...');await extImg();}
   }
   else if(mode==='u'){const u=document.getElementById('urlinp').value.trim();if(!u||!u.startsWith('http')){showErr('Please enter a valid URL starting with https://');return;}showLoad('Fetching recipe from website...');await extUrl(u);}
-  else{if(!dtxt){showErr('Please select a file first.');return;}showLoad('Reading your document...');await extDocSmart();}
+  else if(mode==='d'){if(!dtxt){showErr('Please select a file first.');return;}showLoad('Reading your document...');await extDocSmart();}
+  else if(mode==='s'){const q=(document.getElementById('searchinp').value||'').trim();if(!q){showErr('Please enter a recipe name to search for.');return;}showLoad('Searching for "'+q+'"…');await extSearch(q);}
 }
 async function extImg(){
   try{
-    // Extra compression before API call to avoid 413 Entity Too Large
     const apiImg=await compressImage(fb64,600,0.60);
     const[hd,b64]=apiImg.split(',');const mime=hd.match(/:(.*?);/)[1];
     proc(await callGroq([{inline_data:{mime_type:mime,data:b64}},{text:getPrompt()}]),fb64);
   }
   catch(e){hideLoad();showErr('Could not read image. ('+(e.message||e)+')');}
+}
+
+async function extSearch(q){
+  try{
+    const key=getKey();if(!key)throw new Error('No API key. Tap ⚙️ Settings.');
+    // Use compound-beta which has built-in web search
+    const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify({
+        model:'compound-beta',
+        max_tokens:1500,
+        temperature:0.1,
+        messages:[{role:'user',content:`Search the web for a recipe for "${q}". Find a popular, well-reviewed version with complete ingredients and step-by-step instructions. Then extract it and return ONLY valid JSON with no markdown, no backticks:\n${getPrompt()}`}]
+      })
+    });
+    const d=await res.json();
+    if(d.error)throw new Error(d.error.message||'Groq error');
+    const raw=d.choices?.[0]?.message?.content||'';
+    proc(raw,null);
+  }catch(e){hideLoad();showErr('Could not find recipe. ('+(e.message||e)+')');}
 }
 
 // ── Batch extraction (multiple screenshots) ───────────────────────────────

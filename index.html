@@ -343,7 +343,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
       <input type="file" id="dip" accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" onchange="onDoc(event)" style="display:none"/>
 
       <!-- Mode cards — tap to act immediately -->
-      <div class="addopts">
+      <div class="addopts" style="grid-template-columns:repeat(2,1fr);">
         <div class="addopt on" id="op-p" onclick="selMode('p')">
           <span class="ico">📷</span>
           <div class="lbl">Screenshot</div>
@@ -358,6 +358,11 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
           <span class="ico">📎</span>
           <div class="lbl">Document</div>
           <div id="op-d-hint" class="addopt-hint">Tap to choose file</div>
+        </div>
+        <div class="addopt" id="op-s" onclick="selMode('s')">
+          <span class="ico">🔍</span>
+          <div class="lbl">Search Recipe</div>
+          <div class="addopt-hint">Type a recipe name</div>
         </div>
       </div>
 
@@ -380,6 +385,13 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
       <div id="sec-d" class="fsec" style="display:none">
         <div id="docname" style="font-size:14px;font-family:Arial,sans-serif;color:var(--tc);background:var(--tcl);border-radius:12px;padding:12px 14px;line-height:1.5;"></div>
         <button class="pbtn sec" style="margin-top:10px;" onclick="document.getElementById('dip').click()">Choose Different File</button>
+      </div>
+
+      <!-- Recipe name search (shown when Search mode selected) -->
+      <div id="sec-s" class="fsec" style="display:none">
+        <label class="flbl">Recipe name</label>
+        <input type="text" class="finp" id="searchinp" placeholder="e.g. Beef Wellington, Pad Thai…" autocomplete="off" onkeydown="if(event.key==='Enter')doExtract()"/>
+        <p style="font-size:12px;color:var(--mu);font-family:Arial,sans-serif;margin-top:8px;line-height:1.6;">AI will search the web and extract the full recipe for you automatically.</p>
       </div>
       <div style="padding:0 14px;">
         <div class="errmsg" id="errmsg"></div>
