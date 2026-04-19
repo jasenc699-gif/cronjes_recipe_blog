@@ -892,7 +892,7 @@ ingredients and steps must be arrays of strings. If a value is unknown use null.
 async function callGroq(parts){
   const key=getKey();if(!key)throw new Error('No API key. Tap ⚙️ Settings.');
   const content=parts.map(p=>p.text?{type:'text',text:p.text}:p.inline_data?{type:'image_url',image_url:{url:`data:${p.inline_data.mime_type};base64,${p.inline_data.data}`}}:null).filter(Boolean);
-  const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:'meta-llama/llama-4-scout-17b-16e-instruct',max_tokens:1200,temperature:0.1,messages:[{role:'user',content}]})});
+  const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:'meta-llama/llama-4-scout-17b-16e-instruct',max_tokens:2500,temperature:0.1,messages:[{role:'user',content}]})});
   const d=await res.json();if(d.error)throw new Error(d.error.message||'Groq error');
   return d.choices?.[0]?.message?.content||'';
 }
