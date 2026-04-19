@@ -927,50 +927,44 @@ async function extImg(){
   catch(e){hideLoad();showErr('Could not read image. ('+(e.message||e)+')');}
 }
 
-async function doSearchWeb(){
+function doSearchWeb(){
   const q=(document.getElementById('searchinp').value||'').trim();
   if(!q){showErr('Please enter a recipe name.');return;}
   document.getElementById('errmsg').style.display='none';
-  document.getElementById('search-results').style.display='none';
-  showLoad('Searching for "'+q+'"…');
-  try{
-    const key=getKey();if(!key)throw new Error('No API key. Tap ⚙️ Settings.');
-    const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-      body:JSON.stringify({
-        model:'compound-beta',
-        max_tokens:600,
-        temperature:0.1,
-        messages:[{role:'user',content:`Search the web for "${q.slice(0,80)} recipe" and return ONLY a JSON array of 4 results from different recipe websites. No markdown, no explanation.\n[{"title":"Recipe title","site":"Site Name","url":"https://...","description":"One sentence about this version"}]`}]
-      })
-    });
-    const d=await res.json();
-    hideLoad();
-    if(d.error)throw new Error(d.error.message||'Groq error');
-    const raw=d.choices?.[0]?.message?.content||'';
-    const match=raw.match(/\[[\s\S]*?\]/);
-    if(!match)throw new Error('No results found. Try a different recipe name.');
-    const results=JSON.parse(match[0]).filter(r=>r.url&&r.url.startsWith('http')).slice(0,4);
-    if(!results.length)throw new Error('No recipe sites found. Try a different name.');
-    showSearchResults(results);
-  }catch(e){hideLoad();showErr(e.message||'Search failed.');}
+
+  const enc=encodeURIComponent(q);
+  const sites=[
+    {site:'AllRecipes',        url:`https://www.allrecipes.com/search?q=${enc}`,             description:'Large community recipe collection with ratings & reviews'},
+    {site:'RecipeTin Eats',    url:`https://www.recipetineats.com/?s=${enc}`,                description:'Detailed recipes with tips, loved by home cooks'},
+    {site:'BBC Good Food',     url:`https://www.bbcgoodfood.com/search?q=${enc}`,            description:'Trusted UK recipes, tried and tested'},
+    {site:'Taste.com.au',      url:`https://www.taste.com.au/search?text=${enc}`,            description:'Australian favourite with thousands of recipes'},
+    {site:'Simply Recipes',    url:`https://www.simplyrecipes.com/search?q=${enc}`,          description:'Family-friendly recipes with clear instructions'},
+    {site:'Serious Eats',      url:`https://www.seriouseats.com/search?q=${enc}`,            description:'Science-driven recipes for food enthusiasts'},
+  ];
+
+  // Pick 4 at random so it feels fresh each search
+  const shuffled=sites.sort(()=>Math.random()-0.5).slice(0,4);
+  showSearchResults(q, shuffled);
 }
 
-function showSearchResults(results){
+function showSearchResults(q, results){
   const container=document.getElementById('search-results');
-  container.innerHTML='';
+  container.innerHTML=`<div style="font-size:12px;color:var(--mu);font-family:Arial,sans-serif;margin-bottom:4px;">Tap a site to extract the recipe for <strong style="color:var(--tx);">${q}</strong>:</div>`;
   results.forEach(r=>{
     const card=document.createElement('div');
-    card.style.cssText='background:white;border:1px solid var(--bd);border-radius:14px;padding:14px;cursor:pointer;transition:border-color 0.15s;';
+    card.style.cssText='background:white;border:1.5px solid var(--bd);border-radius:14px;padding:14px 14px 12px;cursor:pointer;transition:border-color 0.15s;display:flex;align-items:flex-start;gap:12px;';
+    const hostname=r.url?new URL(r.url).hostname.replace('www.',''):'';
     card.innerHTML=`
-      <div style="font-size:13px;font-weight:bold;color:var(--tx);margin-bottom:3px;line-height:1.4;">${r.title||r.site}</div>
-      <div style="font-size:11px;color:var(--tc);font-family:Arial,sans-serif;margin-bottom:5px;">${r.site||new URL(r.url).hostname}</div>
-      ${r.description?`<div style="font-size:12px;color:var(--mu);font-family:Arial,sans-serif;line-height:1.5;">${r.description}</div>`:''}`;
+      <div style="font-size:26px;flex-shrink:0;margin-top:1px;">🌐</div>
+      <div style="min-width:0;">
+        <div style="font-size:14px;font-weight:bold;color:var(--tx);margin-bottom:2px;">${r.site}</div>
+        <div style="font-size:11px;color:var(--tc);font-family:Arial,sans-serif;margin-bottom:4px;">${hostname}</div>
+        <div style="font-size:12px;color:var(--mu);font-family:Arial,sans-serif;line-height:1.5;">${r.description}</div>
+      </div>`;
     card.onclick=()=>{
       vibe('tap');
-      document.getElementById('search-results').style.display='none';
-      showLoad('Extracting recipe…');
+      container.style.display='none';
+      showLoad('Fetching recipe from '+r.site+'…');
       extUrl(r.url);
     };
     card.addEventListener('touchstart',()=>card.style.borderColor='var(--tc)',{passive:true});
@@ -982,7 +976,8 @@ function showSearchResults(results){
 }
 
 async function extSearch(q){
-  // legacy — now handled by doSearchWeb
+  // legacy shim
+  const si=document.getElementById('searchinp');if(si)si.value=q;
   doSearchWeb();
 }
 
