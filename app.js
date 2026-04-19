@@ -929,15 +929,15 @@ async function extImg(){
 async function extSearch(q){
   try{
     const key=getKey();if(!key)throw new Error('No API key. Tap ⚙️ Settings.');
-    // Use compound-beta which has built-in web search
+    const cats=allCats().join(', ');
     const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
       body:JSON.stringify({
         model:'compound-beta',
-        max_tokens:1500,
+        max_tokens:1200,
         temperature:0.1,
-        messages:[{role:'user',content:`Search the web for a recipe for "${q}". Find a popular, well-reviewed version with complete ingredients and step-by-step instructions. Then extract it and return ONLY valid JSON with no markdown, no backticks:\n${getPrompt()}`}]
+        messages:[{role:'user',content:`Search the web for a complete recipe for "${q.slice(0,80)}". Return ONLY valid JSON, no markdown:\n{"title":"","servings":"","time":"","cuisine":"","category":"","ingredients":[],"steps":[],"notes":null}\nCategories: ${cats.slice(0,200)}. Arrays of strings only. Unknown = null.`}]
       })
     });
     const d=await res.json();
