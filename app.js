@@ -533,6 +533,7 @@ function resetAdd(){
   const el_url=document.getElementById('urlinp');if(el_url)el_url.value='';
   const el_doc=document.getElementById('docname');if(el_doc)el_doc.textContent='';
   const el_srch=document.getElementById('searchinp');if(el_srch)el_srch.value='';
+  const el_sres=document.getElementById('search-results');if(el_sres){el_sres.innerHTML='';el_sres.style.display='none';}
   ['errmsg','catpanel','batchpanel','multi-count-badge','batch-done-btn'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.style.display='none';
   });
@@ -915,7 +916,7 @@ async function doExtract(){
   }
   else if(mode==='u'){const u=document.getElementById('urlinp').value.trim();if(!u||!u.startsWith('http')){showErr('Please enter a valid URL starting with https://');return;}showLoad('Fetching recipe from website...');await extUrl(u);}
   else if(mode==='d'){if(!dtxt){showErr('Please select a file first.');return;}showLoad('Reading your document...');await extDocSmart();}
-  else if(mode==='s'){const q=(document.getElementById('searchinp').value||'').trim();if(!q){showErr('Please enter a recipe name to search for.');return;}showLoad('Searching for "'+q+'"…');await extSearch(q);}
+  else if(mode==='s'){doSearchWeb();}
 }
 async function extImg(){
   try{
@@ -926,25 +927,63 @@ async function extImg(){
   catch(e){hideLoad();showErr('Could not read image. ('+(e.message||e)+')');}
 }
 
-async function extSearch(q){
+async function doSearchWeb(){
+  const q=(document.getElementById('searchinp').value||'').trim();
+  if(!q){showErr('Please enter a recipe name.');return;}
+  document.getElementById('errmsg').style.display='none';
+  document.getElementById('search-results').style.display='none';
+  showLoad('Searching for "'+q+'"…');
   try{
     const key=getKey();if(!key)throw new Error('No API key. Tap ⚙️ Settings.');
-    const cats=allCats().join(', ');
     const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
       body:JSON.stringify({
         model:'compound-beta',
-        max_tokens:1200,
+        max_tokens:600,
         temperature:0.1,
-        messages:[{role:'user',content:`Search the web for a complete recipe for "${q.slice(0,80)}". Return ONLY valid JSON, no markdown:\n{"title":"","servings":"","time":"","cuisine":"","category":"","ingredients":[],"steps":[],"notes":null}\nCategories: ${cats.slice(0,200)}. Arrays of strings only. Unknown = null.`}]
+        messages:[{role:'user',content:`Search the web for "${q.slice(0,80)} recipe" and return ONLY a JSON array of 4 results from different recipe websites. No markdown, no explanation.\n[{"title":"Recipe title","site":"Site Name","url":"https://...","description":"One sentence about this version"}]`}]
       })
     });
     const d=await res.json();
+    hideLoad();
     if(d.error)throw new Error(d.error.message||'Groq error');
     const raw=d.choices?.[0]?.message?.content||'';
-    proc(raw,null);
-  }catch(e){hideLoad();showErr('Could not find recipe. ('+(e.message||e)+')');}
+    const match=raw.match(/\[[\s\S]*?\]/);
+    if(!match)throw new Error('No results found. Try a different recipe name.');
+    const results=JSON.parse(match[0]).filter(r=>r.url&&r.url.startsWith('http')).slice(0,4);
+    if(!results.length)throw new Error('No recipe sites found. Try a different name.');
+    showSearchResults(results);
+  }catch(e){hideLoad();showErr(e.message||'Search failed.');}
+}
+
+function showSearchResults(results){
+  const container=document.getElementById('search-results');
+  container.innerHTML='';
+  results.forEach(r=>{
+    const card=document.createElement('div');
+    card.style.cssText='background:white;border:1px solid var(--bd);border-radius:14px;padding:14px;cursor:pointer;transition:border-color 0.15s;';
+    card.innerHTML=`
+      <div style="font-size:13px;font-weight:bold;color:var(--tx);margin-bottom:3px;line-height:1.4;">${r.title||r.site}</div>
+      <div style="font-size:11px;color:var(--tc);font-family:Arial,sans-serif;margin-bottom:5px;">${r.site||new URL(r.url).hostname}</div>
+      ${r.description?`<div style="font-size:12px;color:var(--mu);font-family:Arial,sans-serif;line-height:1.5;">${r.description}</div>`:''}`;
+    card.onclick=()=>{
+      vibe('tap');
+      document.getElementById('search-results').style.display='none';
+      showLoad('Extracting recipe…');
+      extUrl(r.url);
+    };
+    card.addEventListener('touchstart',()=>card.style.borderColor='var(--tc)',{passive:true});
+    card.addEventListener('touchend',()=>card.style.borderColor='var(--bd)',{passive:true});
+    container.appendChild(card);
+  });
+  container.style.display='flex';
+  document.querySelector('#sadd .sa').scrollTop=9999;
+}
+
+async function extSearch(q){
+  // legacy — now handled by doSearchWeb
+  doSearchWeb();
 }
 
 // ── Batch extraction (multiple screenshots) ───────────────────────────────

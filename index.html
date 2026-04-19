@@ -390,8 +390,11 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
       <!-- Recipe name search (shown when Search mode selected) -->
       <div id="sec-s" class="fsec" style="display:none">
         <label class="flbl">Recipe name</label>
-        <input type="text" class="finp" id="searchinp" placeholder="e.g. Beef Wellington, Pad Thai…" autocomplete="off" onkeydown="if(event.key==='Enter')doExtract()"/>
-        <p style="font-size:12px;color:var(--mu);font-family:Arial,sans-serif;margin-top:8px;line-height:1.6;">AI will search the web and extract the full recipe for you automatically.</p>
+        <div style="display:flex;gap:8px;">
+          <input type="text" class="finp" id="searchinp" placeholder="e.g. Beef Wellington, Pad Thai…" autocomplete="off" style="flex:1;margin:0;" onkeydown="if(event.key==='Enter')doSearchWeb()"/>
+          <button class="pbtn" onclick="doSearchWeb()" style="width:auto;margin-top:0;padding:13px 16px;font-size:14px;flex-shrink:0;">Search</button>
+        </div>
+        <div id="search-results" style="display:none;margin-top:12px;display:none;flex-direction:column;gap:8px;"></div>
       </div>
       <div style="padding:0 14px;">
         <div class="errmsg" id="errmsg"></div>
