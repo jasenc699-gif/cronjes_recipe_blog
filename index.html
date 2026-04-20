@@ -228,8 +228,19 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 <div id="ms-toolbar">
   <span id="ms-count">0 selected</span>
   <div style="display:flex;gap:8px;">
+    <button class="ms-clr-btn" onclick="openMsCatPicker()" id="ms-cat-btn">Move to…</button>
     <button id="ms-del-btn" class="ms-del-btn" onclick="deleteSelected()">Delete (0)</button>
     <button class="ms-clr-btn" onclick="exitMultiSelect()">Clear</button>
+  </div>
+</div>
+
+<!-- BULK CATEGORY PICKER SHEET -->
+<div id="ms-cat-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:400;align-items:flex-end;justify-content:center;">
+  <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:18px 16px calc(24px + var(--safe-b));max-height:70vh;overflow-y:auto;">
+    <div style="font-size:16px;color:var(--tx);margin-bottom:4px;">Move to Category</div>
+    <div id="ms-cat-subtitle" style="font-size:12px;color:var(--mu);font-family:Arial,sans-serif;margin-bottom:14px;"></div>
+    <div id="ms-cat-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+    <button onclick="closeMsCatPicker()" style="width:100%;background:none;border:1.5px solid var(--bds);border-radius:24px;padding:13px;font-size:14px;font-family:Arial,sans-serif;cursor:pointer;color:var(--mu);margin-top:14px;">Cancel</button>
   </div>
 </div>
 

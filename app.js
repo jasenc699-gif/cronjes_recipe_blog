@@ -244,6 +244,41 @@ function _updateMsToolbar(){
   const cnt=document.getElementById('ms-count');if(cnt)cnt.textContent=n+' selected';
   const btn=document.getElementById('ms-del-btn');if(btn)btn.textContent='Delete ('+n+')';
 }
+
+function openMsCatPicker(){
+  const n=selectedIds.size;if(!n)return;
+  const modal=document.getElementById('ms-cat-modal');
+  const list=document.getElementById('ms-cat-list');
+  const sub=document.getElementById('ms-cat-subtitle');
+  sub.textContent='Updating '+n+' recipe'+(n!==1?'s':'');
+  list.innerHTML='';
+  allCats().forEach(c=>{
+    const btn=document.createElement('button');
+    btn.style.cssText='display:flex;align-items:center;gap:12px;background:white;border:1.5px solid var(--bd);border-radius:14px;padding:13px 16px;font-size:14px;font-family:Arial,sans-serif;color:var(--tx);cursor:pointer;width:100%;text-align:left;transition:border-color 0.12s;';
+    btn.innerHTML=`<span style="font-size:22px;">${catEmoji(c)}</span><span style="flex:1;">${c}</span>`;
+    btn.onclick=()=>applyBulkCat(c);
+    btn.addEventListener('touchstart',()=>btn.style.borderColor='var(--tc)',{passive:true});
+    btn.addEventListener('touchend',()=>btn.style.borderColor='var(--bd)',{passive:true});
+    list.appendChild(btn);
+  });
+  modal.style.display='flex';
+}
+
+function closeMsCatPicker(){
+  document.getElementById('ms-cat-modal').style.display='none';
+}
+
+function applyBulkCat(cat){
+  vibe('save');
+  const now=new Date().toISOString();
+  selectedIds.forEach(id=>{
+    const r=recs.find(x=>x.id===id);
+    if(r){r.category=cat;r.savedAt=now;}
+  });
+  save();buildChips();
+  closeMsCatPicker();
+  exitMultiSelect();
+}
 function _rerenderForSelect(){
   if(_openCat)openCatDetail(_openCat);
   else if(tab==='c')renderCats();
