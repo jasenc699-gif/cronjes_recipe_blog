@@ -1117,11 +1117,67 @@ async function extUrl(u){
   try{
     showLoad('Fetching page...');
     const html=await fetchViaProxy(u);
-    const txt=html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\s{3,}/g,'\n').trim().slice(0,8000);
+
+    // 1. Try JSON-LD structured data first — most recipe sites embed this
+    //    and it's far more reliable than sending scraped text to the AI.
+    const recipe=extractJsonLd(html);
+    if(recipe){
+      showLoad('Extracting recipe...');
+      proc(jsonLdToJson(recipe),null);
+      return;
+    }
+
+    // 2. Fall back to AI text extraction
+    const txt=html
+      .replace(/<script[\s\S]*?<\/script>/gi,'')
+      .replace(/<style[\s\S]*?<\/style>/gi,'')
+      .replace(/<[^>]+>/g,' ')
+      .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+      .replace(/\s{3,}/g,'\n').trim().slice(0,8000);
     if(!txt)throw new Error('No text found on page');
     showLoad('Extracting recipe...');
     proc(await callGroq([{text:`Webpage text from ${u}:\n\n${txt}\n\n${getPrompt()}`}]),null);
   }catch(e){hideLoad();showErr('Could not fetch recipe. ('+(e.message||e)+')');}
+}
+
+// Pull the first Recipe object out of any JSON-LD blocks on the page
+function extractJsonLd(html){
+  const blocks=html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)||[];
+  for(const block of blocks){
+    try{
+      const json=JSON.parse(block.replace(/<script[^>]*>/i,'').replace(/<\/script>/i,'').trim());
+      const items=Array.isArray(json)?json:(json['@graph']?json['@graph']:[json]);
+      for(const item of items){
+        if(item&&(item['@type']==='Recipe'||(Array.isArray(item['@type'])&&item['@type'].includes('Recipe'))))return item;
+      }
+    }catch(e){}
+  }
+  return null;
+}
+
+// Convert a JSON-LD Recipe object to the app's JSON format
+function jsonLdToJson(r){
+  const stripHtml=s=>(s||'').replace(/<[^>]+>/g,' ').replace(/\s{2,}/g,' ').trim();
+  const ingredients=(r.recipeIngredient||[]).map(stripHtml).filter(Boolean);
+  const steps=(r.recipeInstructions||[]).map(s=>{
+    if(typeof s==='string')return stripHtml(s);
+    if(s.text)return stripHtml(s.text);
+    if(s.itemListElement)return s.itemListElement.map(x=>stripHtml(x.text||x)).join(' ');
+    return '';
+  }).filter(Boolean);
+  const time=r.totalTime||r.cookTime||r.prepTime||null;
+  const fmtTime=t=>{if(!t)return null;const m=t.match(/(\d+)H.*?(\d+)M|(\d+)H|(\d+)M/i);if(!m)return t;if(m[1]&&m[2])return m[1]+'h '+m[2]+'min';if(m[3])return m[3]+'h';if(m[4])return m[4]+' min';return t;};
+  const servings=r.recipeYield?(Array.isArray(r.recipeYield)?r.recipeYield[0]:r.recipeYield).toString():null;
+  return JSON.stringify({
+    title:stripHtml(r.name)||'Untitled Recipe',
+    servings,
+    time:fmtTime(time),
+    cuisine:Array.isArray(r.recipeCuisine)?r.recipeCuisine[0]:r.recipeCuisine||null,
+    category:Array.isArray(r.recipeCategory)?r.recipeCategory[0]:r.recipeCategory||null,
+    ingredients,
+    steps,
+    notes:r.description?stripHtml(r.description).slice(0,300):null
+  });
 }
 async function extDoc(){
   try{proc(await callGroq([{text:`Word document text:\n\n${dtxt.slice(0,7000)}\n\n${getPrompt()}`}]),null);}
@@ -1130,9 +1186,38 @@ async function extDoc(){
 
 function proc(raw,imgData){
   try{
-    const d=JSON.parse(raw.replace(/```json|```/g,'').trim());
+    // Try progressively looser JSON extraction strategies
+    let d=null;
+    const attempts=[
+      // 1. Direct parse after stripping markdown fences
+      ()=>JSON.parse(raw.replace(/```json|```/g,'').trim()),
+      // 2. Find the first {...} block in the response
+      ()=>{const m=raw.match(/\{[\s\S]*\}/);if(m)return JSON.parse(m[0]);throw new Error('no match');},
+      // 3. Find the last {...} block (sometimes AI puts JSON after explanation)
+      ()=>{const all=[...raw.matchAll(/\{[\s\S]*?\}/g)];if(all.length)return JSON.parse(all[all.length-1][0]);throw new Error('no match');}
+    ];
+    for(const attempt of attempts){
+      try{d=attempt();if(d&&d.title)break;}catch(e){d=null;}
+    }
+    if(!d)throw new Error('no valid JSON found');
+
     const aiCat=allCats().includes(d.category)?d.category:'Other';
-    pendingRec={id:Date.now().toString(),title:d.title||'Untitled Recipe',servings:d.servings||null,time:d.time||null,cuisine:d.cuisine||null,category:aiCat,ingredients:Array.isArray(d.ingredients)?d.ingredients:[],steps:Array.isArray(d.steps)?d.steps:[],notes:d.notes||null,imageData:imgData||null,emoji:FE[Math.floor(Math.random()*FE.length)],savedAt:new Date().toISOString(),favourite:false,comments:[]};
+    pendingRec={
+      id:Date.now().toString(),
+      title:d.title||'Untitled Recipe',
+      servings:d.servings||null,
+      time:d.time||null,
+      cuisine:d.cuisine||null,
+      category:aiCat,
+      ingredients:Array.isArray(d.ingredients)?d.ingredients:[],
+      steps:Array.isArray(d.steps)?d.steps:[],
+      notes:d.notes||null,
+      imageData:imgData||null,
+      emoji:FE[Math.floor(Math.random()*FE.length)],
+      savedAt:new Date().toISOString(),
+      favourite:false,
+      comments:[]
+    };
     hideLoad();
     document.getElementById('catsel').innerHTML=allCats().map(c=>`<option value="${c}"${c===aiCat?' selected':''}>${catEmoji(c)} ${c}</option>`).join('');
     document.getElementById('catpreview').textContent=pendingRec.title;
@@ -1264,8 +1349,25 @@ async function showImgPicker(query){
   });
 }
 
-function selectPickerImage(url){
-  editPendingImg=url;setEditImgPreview(url);closeImgPicker();
+async function selectPickerImage(url){
+  // Convert to base64 immediately so the image is self-contained in IDB
+  // and doesn't depend on the external URL remaining available.
+  try{
+    const resp=await fetch(url);
+    if(!resp.ok)throw new Error('fetch failed');
+    const blob=await resp.blob();
+    const b64=await new Promise((res,rej)=>{
+      const rd=new FileReader();rd.onload=()=>res(rd.result);rd.onerror=rej;rd.readAsDataURL(blob);
+    });
+    const compressed=await compressImage(b64,900,0.72);
+    _editPendingImgData=compressed;
+    editPendingImg='__idb__';
+    setEditImgPreview(compressed);
+  }catch(e){
+    // Fallback to URL if fetch fails (e.g. CORS)
+    editPendingImg=url;setEditImgPreview(url);
+  }
+  closeImgPicker();
 }
 
 function closeImgPicker(){
@@ -1300,11 +1402,36 @@ function clearHeroShimmer(id,emoji,color){
   const h=document.getElementById('dhero');
   h.style.animation='';h.style.background=color;h.innerHTML=emoji;
 }
-function applyHeroImage(id,url){
+async function applyHeroImage(id,url){
   const r=recs.find(x=>x.id===id);if(!r||r.imageData)return;
-  r.imageData=url;save();
-  if(rid===id){const h=document.getElementById('dhero');h.style.animation='';h.innerHTML=`<img src="${url}"/>`;h.style.minHeight='';}
-  buildChips();render();
+  // Convert the external URL to base64 and store in IDB so it persists
+  // even when the source URL expires or the user is offline.
+  try{
+    const resp=await fetch(url);
+    if(!resp.ok)throw new Error('fetch failed');
+    const blob=await resp.blob();
+    const b64=await new Promise((res,rej)=>{
+      const rd=new FileReader();
+      rd.onload=()=>res(rd.result);
+      rd.onerror=rej;
+      rd.readAsDataURL(blob);
+    });
+    const compressed=await compressImage(b64,900,0.72);
+    const ok=await ImgStore.set(id,compressed);
+    if(ok){
+      r.imageData='__idb__';save();
+      if(rid===id){
+        const h=document.getElementById('dhero');
+        h.style.animation='';h.innerHTML=`<img src="${compressed}"/>`;h.style.minHeight='';
+      }
+      buildChips();render();
+    }
+  }catch(e){
+    // Fallback: store the URL directly if we can't fetch/convert it
+    r.imageData=url;save();
+    if(rid===id){const h=document.getElementById('dhero');h.style.animation='';h.innerHTML=`<img src="${url}"/>`;h.style.minHeight='';}
+    buildChips();render();
+  }
 }
 
 async function tryLoadImage(url,timeoutMs=8000){
