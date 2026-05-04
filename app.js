@@ -24,7 +24,7 @@ function saveCustomCats(arr){store.set(CK,JSON.stringify(arr));}
 function allCats(){return[...CATS,...getCustomCats().filter(c=>!CATS.includes(c))];}
 function catEmoji(c){return CE[c]||'🍴';}
 function catColor(c){return CC[c]||CUSTOMCC;}
-let recs=[],tab='c',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false,editPendingImg=undefined,_editPendingImgData=null;
+let recs=[],tab='c',catF='All',rid=null,mode='p',fb64=null,dtxt=null,pendingRec=null,editMode=false,editPendingImg=undefined,_editPendingImgData=null,pendingImgUrl=null;
 let _openCat=null;
 let _prevTab='c',_prevCat=null;
 let multiSelectMode=false,selectedIds=new Set();
@@ -325,31 +325,32 @@ function renderCats(){
   }
   document.getElementById('pempty').style.display='none';
   usedCats.forEach(c=>{
-    // recs is newest-first, so the first match with an image is the latest saved
     const catRecs=recs.filter(r=>r.category===c);
     const n=catRecs.length;
-    const hero=catRecs.find(r=>r.imageData)||null;
 
     const d=document.createElement('div');d.className='ccard';
     d.style.borderColor='transparent';
     d.onclick=()=>{vibe('tap');openCatDetail(c);};
 
-    // Shared overlay markup (sits on top of the image)
     const overlay=`<div class="ccard-overlay"><span class="cico">${catEmoji(c)}</span><div class="cname">${c}</div><div class="ccnt">${n} recipe${n!==1?'s':''}</div></div>`;
-    // Fallback markup (used when there is no image)
     const fallback=`<div class="ccard-fallback" style="background:${catColor(c)};position:absolute;inset:0;"><span class="cico">${catEmoji(c)}</span><div class="cname">${c}</div><div class="ccnt">${n} recipe${n!==1?'s':''}</div></div>`;
 
-    if(hero&&hero.imageData==='__idb__'){
-      // Render fallback immediately, then swap image in once IDB resolves
-      d.innerHTML=fallback;
-      ImgStore.get(hero.id).then(data=>{
-        if(data&&d.isConnected)d.innerHTML=`<img class="ccard-img" src="${data}"/>${overlay}`;
-      });
-    }else if(hero&&hero.imageData){
-      d.innerHTML=`<img class="ccard-img" src="${hero.imageData}"/>${overlay}`;
-    }else{
-      d.innerHTML=fallback;
-    }
+    // Always render fallback immediately, then swap in the first recipe image
+    // that actually has data — tries each recipe in order so a missing IDB entry
+    // doesn't permanently block the category card from showing any image.
+    d.innerHTML=fallback;
+    (async()=>{
+      for(const r of catRecs){
+        if(!r.imageData)continue;
+        if(r.imageData==='__idb__'){
+          const data=await ImgStore.get(r.id);
+          if(data&&d.isConnected){d.innerHTML=`<img class="ccard-img" src="${data}"/>${overlay}`;break;}
+        }else{
+          if(d.isConnected)d.innerHTML=`<img class="ccard-img" src="${r.imageData}"/>${overlay}`;
+          break;
+        }
+      }
+    })();
     p.appendChild(d);
   });
 }
@@ -392,7 +393,6 @@ function enterEditMode(){
   document.getElementById('edit-time').value=r.time||'';
   document.getElementById('edit-cuisine').value=r.cuisine||'';
   document.getElementById('edit-notes').value=r.notes||'';
-  const imgQ=document.getElementById('img-search-query');if(imgQ)imgQ.value=r.title||'';
   // Category
   const catSel=document.getElementById('edit-cat');
   catSel.innerHTML=allCats().map(c=>`<option value="${c}"${c===r.category?' selected':''}>${catEmoji(c)} ${c}</option>`).join('');
@@ -403,7 +403,6 @@ function enterEditMode(){
   // Toggle UI
   document.getElementById('ddet-view').style.display='none';
   document.getElementById('ddet-edit').style.display='block';
-  document.getElementById('dhero-refresh').style.display='flex';
   document.getElementById('dedit-ico').setAttribute('stroke','#C05050');
   document.querySelector('#sdet .sa').scrollTop=0;
 }
@@ -487,7 +486,6 @@ function exitEditMode(){
   editMode=false;
   document.getElementById('ddet-view').style.display='block';
   document.getElementById('ddet-edit').style.display='none';
-  document.getElementById('dhero-refresh').style.display='none';
   document.getElementById('dedit-ico').setAttribute('stroke','#4A9090');
   document.querySelector('#sdet .sa').scrollTop=0;
 }
@@ -562,7 +560,7 @@ async function delRecipe(){if(!confirm('Delete this recipe?'))return;vibe('delet
 
 
 function resetAdd(){
-  mode='p';fb64=null;dtxt=null;pendingRec=null;multiImgs=[];batchResults=[];
+  mode='p';fb64=null;dtxt=null;pendingRec=null;pendingImgUrl=null;multiImgs=[];batchResults=[];
   ['fip','dip'].forEach(id=>{try{const el=document.getElementById(id);if(el)el.value='';}catch(e){}});
   const el_imgprev=document.getElementById('imgprev');if(el_imgprev)el_imgprev.src='';
   const el_url=document.getElementById('urlinp');if(el_url)el_url.value='';
@@ -1102,10 +1100,8 @@ function saveBatchItem(i){
   const sel=document.querySelector('#batch-item-'+i+' select');
   if(sel)item.rec.category=sel.value;
   if(item.imgData){item.rec.imageData='__idb__';ImgStore.set(item.rec.id,item.imgData);}
-  const savedId=item.rec.id,savedTitle=item.rec.title,hadPhoto=!!item.rec.imageData;
   item.status='saved';
   recs.unshift(item.rec);save();vibe('save');
-  if(!hadPhoto)genFoodImage(savedId,savedTitle);
   renderBatchList();
 }
 
@@ -1157,12 +1153,15 @@ async function extUrl(u){
     //    and it's far more reliable than sending scraped text to the AI.
     const recipe=extractJsonLd(html);
     if(recipe){
+      // Extract recipe image from JSON-LD before converting
+      pendingImgUrl=extractRecipeImageUrl(recipe)||extractOgImage(html)||null;
       showLoad('Extracting recipe...');
       proc(jsonLdToJson(recipe),null);
       return;
     }
 
-    // 2. Fall back to AI text extraction
+    // 2. Fall back to AI text extraction — also grab og:image as the recipe photo
+    pendingImgUrl=extractOgImage(html)||null;
     const txt=html
       .replace(/<script[\s\S]*?<\/script>/gi,'')
       .replace(/<style[\s\S]*?<\/style>/gi,'')
@@ -1188,6 +1187,23 @@ function extractJsonLd(html){
     }catch(e){}
   }
   return null;
+}
+
+// Extract the main image URL from a JSON-LD Recipe object
+function extractRecipeImageUrl(recipe){
+  const img=recipe.image;
+  if(!img)return null;
+  if(typeof img==='string')return img;
+  if(Array.isArray(img)){const first=img[0];return typeof first==='string'?first:(first?.url||null);}
+  if(img.url)return img.url;
+  return null;
+}
+
+// Extract og:image meta tag from HTML
+function extractOgImage(html){
+  const m=html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+           ||html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+  return m&&m[1]&&m[1].startsWith('http')?m[1]:null;
 }
 
 // Convert a JSON-LD Recipe object to the app's JSON format
@@ -1270,11 +1286,12 @@ function confirmSave(){
     ImgStore.set(pendingRec.id,imgData); // async — store in IDB
   }
   const savedId=pendingRec.id;
-  const savedTitle=pendingRec.title;
   const hasPhoto=!!pendingRec.imageData;
+  const imgUrl=pendingImgUrl;pendingImgUrl=null;
   recs.unshift(pendingRec);save();vibe('save');
   showDetail(savedId);pendingRec=null;
-  if(!hasPhoto)genFoodImage(savedId,savedTitle);
+  // If no uploaded photo but we scraped an image URL from the source website, fetch it
+  if(!hasPhoto&&imgUrl)applyHeroImage(savedId,imgUrl);
 }
 
 // ── Edit-mode image helpers ───────────────────────────────────────────────
@@ -1303,140 +1320,6 @@ function editOnImg(e){
   };rd.readAsDataURL(f);
   e.target.value='';
 }
-async function editSearchImage(){
-  const queryInput=document.getElementById('img-search-query');
-  const query=(queryInput?queryInput.value.trim():'')||document.getElementById('edit-title').value.trim()||(recs.find(x=>x.id===rid)?.title||'food');
-  showImgPicker(query);
-}
-
-async function showImgPicker(query){
-  const modal=document.getElementById('img-picker-modal');
-  const grid=document.getElementById('img-picker-grid');
-  const loading=document.getElementById('img-picker-loading');
-  const none=document.getElementById('img-picker-none');
-  const subtitle=document.getElementById('img-picker-subtitle');
-  modal.style.display='flex';
-  grid.style.display='none';grid.innerHTML='';
-  loading.style.display='block';none.style.display='none';
-  subtitle.textContent='AI is searching for: '+query;
-
-  let urls=[];
-
-  // 1. Try Groq compound-beta — uses built-in web search to find real food images
-  const key=getKey();
-  if(key){
-    try{
-      const resp=await fetch('https://api.groq.com/openai/v1/chat/completions',{
-        method:'POST',
-        headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},
-        body:JSON.stringify({
-          model:'compound-beta-mini',
-          messages:[{role:'user',content:`Find 6 high-quality food photography image URLs for: "${query.slice(0,80)}". Return ONLY a JSON array of direct image URLs ending in .jpg .jpeg .png or .webp. No markdown, no explanation.`}],
-          max_tokens:400
-        })
-      });
-      if(resp.ok){
-        const data=await resp.json();
-        const text=data.choices?.[0]?.message?.content||'';
-        const match=text.match(/\[[\s\S]*?\]/);
-        if(match){
-          const parsed=JSON.parse(match[0]);
-          urls=parsed.filter(u=>typeof u==='string'&&u.startsWith('http'));
-        }
-      }
-      // Non-OK status (413, 429, etc.) — silently fall through to MealDB/Pollinations
-    }catch(e){
-      // Network or parse error — silently fall through
-      console.warn('cronjes: image search unavailable:',e.message);
-    }
-  }
-
-  // 2. Fallback — MealDB real photos + Pollinations AI generation
-  if(urls.length<3){
-    try{
-      const r=await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(query)}`);
-      const d=await r.json();
-      if(d.meals)d.meals.slice(0,2).forEach(m=>{if(m.strMealThumb&&!urls.includes(m.strMealThumb))urls.unshift(m.strMealThumb);});
-    }catch(e){}
-    const prompt=encodeURIComponent(`professional food photography of ${query}, appetizing, restaurant quality, soft natural lighting, no text, no watermarks`);
-    for(let s=1;urls.length+s<=7;s++){
-      urls.push(`https://image.pollinations.ai/prompt/${prompt}?width=600&height=400&seed=${s*41}&nologo=true`);
-    }
-  }
-
-  loading.style.display='none';
-  const slots=urls.slice(0,6);
-  if(!slots.length){none.style.display='block';return;}
-  grid.style.display='grid';
-
-  slots.forEach(src=>{
-    const wrap=document.createElement('div');
-    wrap.style.cssText='border-radius:12px;overflow:hidden;height:130px;cursor:pointer;border:3px solid transparent;transition:border-color 0.15s;background:linear-gradient(90deg,#c8dede 25%,#d8eaea 50%,#c8dede 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;';
-    const img=new Image();
-    img.crossOrigin='anonymous';
-    img.onload=()=>{wrap.style.cssText='border-radius:12px;overflow:hidden;height:130px;cursor:pointer;border:3px solid transparent;transition:border-color 0.15s;';wrap.innerHTML=`<img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;"/>`;};
-    img.onerror=()=>{wrap.style.display='none';};
-    img.src=src;
-    wrap.onclick=()=>selectPickerImage(src);
-    wrap.addEventListener('touchstart',()=>wrap.style.borderColor='var(--tc)',{passive:true});
-    wrap.addEventListener('touchend',()=>wrap.style.borderColor='transparent',{passive:true});
-    grid.appendChild(wrap);
-  });
-}
-
-async function selectPickerImage(url){
-  // Convert to base64 immediately so the image is self-contained in IDB
-  // and doesn't depend on the external URL remaining available.
-  try{
-    const resp=await fetch(url);
-    if(!resp.ok)throw new Error('fetch failed');
-    const blob=await resp.blob();
-    const b64=await new Promise((res,rej)=>{
-      const rd=new FileReader();rd.onload=()=>res(rd.result);rd.onerror=rej;rd.readAsDataURL(blob);
-    });
-    const compressed=await compressImage(b64,900,0.72);
-    _editPendingImgData=compressed;
-    editPendingImg='__idb__';
-    setEditImgPreview(compressed);
-  }catch(e){
-    // Fallback to URL if fetch fails (e.g. CORS)
-    editPendingImg=url;setEditImgPreview(url);
-  }
-  closeImgPicker();
-}
-
-function closeImgPicker(){
-  document.getElementById('img-picker-modal').style.display='none';
-}
-
-async function refreshImage(){
-  const r=recs.find(x=>x.id===rid);if(!r)return;
-  if(r.imageData==='__idb__')await ImgStore.del(rid);
-  r.imageData=null;save();
-  const h=document.getElementById('dhero');
-  h.innerHTML=r.emoji;h.style.background=catColor(r.category);h.style.minHeight='150px';h.style.animation='';
-  genFoodImage(rid,r.title);
-}
-
-// ── Image search pipeline ─────────────────────────────────────────────────
-// 1. TheMealDB  — real food photos matched by dish name
-// 2. loremflickr — real Flickr photos searched by title keywords
-// 3. Pollinations.ai — AI-generated fallback
-
-function setHeroShimmer(id){
-  if(rid!==id)return;
-  const h=document.getElementById('dhero');
-  h.innerHTML='';
-  h.style.minHeight='160px';
-  h.style.background='linear-gradient(90deg,#c8dede 25%,#d8eaea 50%,#c8dede 75%)';
-  h.style.backgroundSize='200% 100%';
-  h.style.animation='shimmer 1.4s infinite';
-}
-function clearHeroShimmer(id,emoji,color){
-  if(rid!==id)return;
-  const h=document.getElementById('dhero');
-  h.style.animation='';h.style.background=color;h.innerHTML=emoji;
-}
 async function applyHeroImage(id,url){
   const r=recs.find(x=>x.id===id);if(!r||r.imageData)return;
   // Convert the external URL to base64 and store in IDB so it persists
@@ -1459,64 +1342,18 @@ async function applyHeroImage(id,url){
         const h=document.getElementById('dhero');
         h.style.animation='';h.innerHTML=`<img src="${compressed}"/>`;h.style.minHeight='';
       }
-      buildChips();render();
+      buildChips();
+      if(tab==='c')renderCats();else render();
     }
   }catch(e){
     // Fallback: store the URL directly if we can't fetch/convert it
     r.imageData=url;save();
     if(rid===id){const h=document.getElementById('dhero');h.style.animation='';h.innerHTML=`<img src="${url}"/>`;h.style.minHeight='';}
-    buildChips();render();
+    buildChips();
+    if(tab==='c')renderCats();else render();
   }
 }
 
-async function tryLoadImage(url,timeoutMs=8000){
-  return new Promise((res,rej)=>{
-    const t=setTimeout(()=>rej(new Error('timeout')),timeoutMs);
-    const i=new Image();i.crossOrigin='anonymous';
-    i.onload=()=>{clearTimeout(t);res(url);};
-    i.onerror=()=>{clearTimeout(t);rej(new Error('load failed'));};
-    i.src=url;
-  });
-}
-
-async function searchMealDB(title){
-  const queries=[title.trim(),title.trim().split(/\s+/).slice(0,2).join(' '),title.trim().split(/\s+/)[0]];
-  for(const q of queries){
-    if(!q)continue;
-    try{
-      const r=await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(q)}`);
-      const d=await r.json();
-      if(d.meals?.[0]?.strMealThumb)return await tryLoadImage(d.meals[0].strMealThumb);
-    }catch(e){}
-  }
-  return null;
-}
-
-async function searchLoremFlickr(title){
-  // Use first 1-2 meaningful words as search terms alongside "food"
-  const words=title.trim().split(/\s+/).slice(0,2).map(w=>w.replace(/[^a-z0-9]/gi,'')).filter(Boolean);
-  const keyword=words.length?words.join(','):'food';
-  const url=`https://loremflickr.com/600/400/${encodeURIComponent(keyword)},food?lock=${Math.floor(Math.random()*10000)}`;
-  return await tryLoadImage(url,12000);
-}
-
-async function searchPollinations(title){
-  const prompt=encodeURIComponent(`professional food photography of "${title}", appetizing dish, restaurant quality, soft natural lighting, top-down or 45-degree angle view, no text, no watermarks`);
-  const url=`https://image.pollinations.ai/prompt/${prompt}?width=600&height=400&nologo=true&seed=${Date.now()}`;
-  return await tryLoadImage(url,18000);
-}
-
-async function genFoodImage(id,title){
-  const r=recs.find(x=>x.id===id);if(!r||r.imageData)return;
-  setHeroShimmer(id);
-  try{
-    let url=await searchMealDB(title).catch(()=>null);
-    if(!url)url=await searchLoremFlickr(title).catch(()=>null);
-    if(!url)url=await searchPollinations(title).catch(()=>null);
-    if(url)applyHeroImage(id,url);
-    else clearHeroShimmer(id,r.emoji,catColor(r.category));
-  }catch(e){clearHeroShimmer(id,r.emoji,catColor(r.category));}
-}
 
 // PWA — register real service worker file
 if('serviceWorker' in navigator){

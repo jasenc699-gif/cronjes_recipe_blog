@@ -204,24 +204,6 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 
 <div id="loader"><div class="spin"></div><p id="loadmsg">Extracting recipe...</p></div>
 
-<!-- IMAGE PICKER MODAL -->
-<div id="img-picker-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:300;align-items:flex-end;justify-content:center;">
-  <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:16px 16px calc(20px + var(--safe-b));max-height:85vh;overflow-y:auto;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-      <div>
-        <div style="font-size:16px;color:var(--tx);">Pick an Image</div>
-        <div id="img-picker-subtitle" style="font-size:12px;color:var(--mu);font-family:Arial,sans-serif;margin-top:2px;"></div>
-      </div>
-      <button onclick="closeImgPicker()" style="background:none;border:none;font-size:26px;cursor:pointer;color:var(--mu);min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;">×</button>
-    </div>
-    <div id="img-picker-loading" style="text-align:center;padding:30px 0;font-family:Arial,sans-serif;color:var(--mu);">
-      <div class="spin" style="margin:0 auto 12px;"></div>Loading images…
-    </div>
-    <div id="img-picker-grid" style="display:none;grid-template-columns:1fr 1fr;gap:8px;"></div>
-    <div id="img-picker-none" style="display:none;text-align:center;padding:24px;font-family:Arial,sans-serif;color:var(--mu);font-size:14px;">No images found — try a different name</div>
-    <button onclick="closeImgPicker()" style="width:100%;background:none;border:1.5px solid var(--bds);border-radius:24px;padding:13px;font-size:14px;font-family:Arial,sans-serif;cursor:pointer;color:var(--mu);margin-top:12px;">Cancel</button>
-  </div>
-</div>
 
 
 <!-- MULTI-SELECT TOOLBAR -->
@@ -448,9 +430,6 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
     <div class="sa">
       <div style="position:relative;">
         <div id="dhero" class="dhero">🍴</div>
-        <button id="dhero-refresh" onclick="refreshImage()" title="Search for new image" style="display:none;position:absolute;bottom:9px;right:9px;background:rgba(26,60,60,0.72);border:none;border-radius:50%;width:38px;height:38px;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 2px 8px rgba(0,0,0,0.25);">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.3"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        </button>
       </div>
 
       <!-- VIEW MODE -->
@@ -490,12 +469,8 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 
         <label class="flbl" style="margin-top:10px;">Photo</label>
         <div id="edit-img-preview" style="width:100%;height:150px;border-radius:12px;overflow:hidden;background:var(--tcl);display:flex;align-items:center;justify-content:center;font-size:48px;margin-bottom:10px;"></div>
-        <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
           <button class="pbtn sec" style="flex:1;margin-top:0;padding:11px 8px;font-size:13px;font-family:Arial,sans-serif;" onclick="document.getElementById('edit-img-file').click()">📷 Upload Photo</button>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:4px;align-items:center;">
-          <input type="text" id="img-search-query" class="finp" placeholder="Type recipe name to search…" style="flex:1;margin:0;padding:11px 13px;font-size:13px;border-radius:10px;"/>
-          <button id="edit-search-img-btn" class="pbtn sec" style="width:auto;margin-top:0;padding:11px 14px;font-size:13px;font-family:Arial,sans-serif;white-space:nowrap;flex-shrink:0;" onclick="editSearchImage()">🔍 Search</button>
         </div>
         <input type="file" id="edit-img-file" accept="image/*" style="display:none" onchange="editOnImg(event)"/>
 
