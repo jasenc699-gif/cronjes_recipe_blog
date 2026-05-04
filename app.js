@@ -680,7 +680,7 @@ async function onDoc(e){
       for(let i=1;i<=Math.min(pdf.numPages,20);i++){
         const page=await pdf.getPage(i);
         const content=await page.getTextContent();
-        text+=content.items.map(it=>it.str).join(' ')+'\n';
+        text+=content.items.map(it=>it.str+(it.hasEOL?'\n':' ')).join('');
       }
       dtxt=text.replace(/\n{3,}/g,'\n\n').trim();
       if(!dtxt){showErr('Could not extract text from this PDF. Try a Word document instead.');return;}
@@ -688,8 +688,12 @@ async function onDoc(e){
     }catch(er){showErr('Could not read this PDF. ('+(er.message||er)+')');}
   } else {
     if(typeof mammoth==='undefined'){showErr('Document reader still loading. Try again.');return;}
-    try{const buf=await f.arrayBuffer();const res=await mammoth.extractRawText({arrayBuffer:buf});dtxt=res.value.replace(/\n{3,}/g,'\n\n').trim();dn.textContent='📄 '+f.name;document.getElementById('sec-d').style.display='block';document.getElementById('op-d-hint').textContent='File ready ✓';}
-    catch(er){showErr('Could not read this Word document.');}
+    try{
+      const buf=await f.arrayBuffer();const res=await mammoth.extractRawText({arrayBuffer:buf});
+      dtxt=(res.value||'').replace(/\n{3,}/g,'\n\n').trim();
+      if(!dtxt){showErr('Could not extract text from this Word document. It may be image-based or empty. Try taking a screenshot instead.');return;}
+      dn.textContent='📄 '+f.name;document.getElementById('sec-d').style.display='block';document.getElementById('op-d-hint').textContent='File ready ✓';
+    }catch(er){showErr('Could not read this Word document. ('+(er.message||er)+'.');}
   }
 }
 
@@ -956,8 +960,12 @@ ingredients and steps must be arrays of strings. If a value is unknown use null.
 
 async function callGroq(parts){
   const key=getKey();if(!key)throw new Error('No API key. Tap ⚙️ Settings.');
-  const content=parts.map(p=>p.text?{type:'text',text:p.text}:p.inline_data?{type:'image_url',image_url:{url:`data:${p.inline_data.mime_type};base64,${p.inline_data.data}`}}:null).filter(Boolean);
-  const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:'meta-llama/llama-4-scout-17b-16e-instruct',max_tokens:2500,temperature:0.1,messages:[{role:'user',content}]})});
+  // Detect whether any part is an image — if so, use the vision model.
+  // For text-only extraction (URL/doc/search), use the stronger text model.
+  const hasImage=parts.some(p=>p.inline_data);
+  const model=hasImage?'meta-llama/llama-4-scout-17b-16e-instruct':'llama-3.3-70b-versatile';
+  const msgs=parts.map(p=>p.text?{type:'text',text:p.text}:p.inline_data?{type:'image_url',image_url:{url:`data:${p.inline_data.mime_type};base64,${p.inline_data.data}`}}:null).filter(Boolean);
+  const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model,max_tokens:4096,temperature:0.1,messages:[{role:'user',content:msgs}]})});
   const d=await res.json();if(d.error)throw new Error(d.error.message||'Groq error');
   return d.choices?.[0]?.message?.content||'';
 }
@@ -1156,13 +1164,33 @@ function skipBatchItem(i){
 
 // ── Smart document extraction (single or multi-recipe) ────────────────────
 async function extDocSmart(){
-  try{
-    const multiPrompt=`Extract ALL recipes from this document. Return ONLY a valid JSON array (even if there is only one recipe):
+  // Multi-strategy JSON array parser — mirrors the object parsing in proc()
+  function parseArr(raw){
+    // Strategy 1: strip markdown fences and parse directly
+    try{const a=JSON.parse(raw.replace(/```json|```/g,'').trim());if(Array.isArray(a)&&a.length)return a;}catch(e){}
+    // Strategy 2: find first [...] block in the response
+    try{const m=raw.match(/\[[\s\S]*\]/);if(m){const a=JSON.parse(m[0]);if(Array.isArray(a)&&a.length)return a;}}catch(e){}
+    // Strategy 3: AI returned a single object instead of an array — wrap it
+    try{const m=raw.match(/\{[\s\S]*\}/);if(m){const o=JSON.parse(m[0]);if(o&&o.title)return[o];}}catch(e){}
+    return null;
+  }
+
+  const maxChars=9000; // enough for most multi-page docs; AI context window is ~32k tokens
+  const multiPrompt=`Extract ALL recipes from this document. Return ONLY a valid JSON array (even if there is only one recipe):
 [{"title":"Recipe Name","servings":"4 servings","time":"30 mins","cuisine":"Italian","category":"Dinner","ingredients":["200g pasta"],"steps":["Boil pasta."],"notes":"Tips here"}]
 Pick categories from: ${allCats().join(', ')}. ingredients and steps must be arrays of strings. Unknown values use null.`;
-    const raw=await callGroq([{text:`Document text:\n\n${dtxt.slice(0,7500)}\n\n${multiPrompt}`}]);
-    const arr=JSON.parse(raw.replace(/```json|```/g,'').trim());
-    if(!Array.isArray(arr)||!arr.length)throw new Error('not-array');
+
+  let raw='';
+  try{
+    raw=await callGroq([{text:`Document text:\n\n${dtxt.slice(0,maxChars)}\n\n${multiPrompt}`}]);
+  }catch(apiErr){
+    // API/network errors (bad key, rate limit, no internet) — show the real message
+    hideLoad();showErr('Could not extract recipe: '+(apiErr.message||apiErr));
+    return;
+  }
+
+  const arr=parseArr(raw);
+  if(arr&&arr.length){
     if(arr.length===1){
       // Single recipe — use normal single-save flow
       proc(JSON.stringify(arr[0]),null);
@@ -1177,11 +1205,13 @@ Pick categories from: ${allCats().join(', ')}. ingredients and steps must be arr
       });
       hideLoad();showBatchPanel();
     }
-  }catch(e){
-    // Fallback: single-recipe extraction with original prompt
-    hideLoad();showLoad('Extracting recipe…');
-    await extDoc();
+    return;
   }
+
+  // JSON parse failed entirely — try the single-recipe prompt as a last resort
+  // (this path only runs if the AI returned something we truly can't parse)
+  showLoad('Retrying extraction…');
+  await extDoc();
 }
 async function fetchViaProxy(u){
   const proxies=[()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`),()=>fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`),()=>fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`)];
@@ -1275,8 +1305,8 @@ function jsonLdToJson(r){
   });
 }
 async function extDoc(){
-  try{proc(await callGroq([{text:`Word document text:\n\n${dtxt.slice(0,7000)}\n\n${getPrompt()}`}]),null);}
-  catch(e){hideLoad();showErr('Could not extract recipe. ('+(e.message||e)+')');}
+  try{proc(await callGroq([{text:`Document text:\n\n${dtxt.slice(0,9000)}\n\n${getPrompt()}`}]),null);}
+  catch(e){hideLoad();showErr('Could not extract recipe: '+(e.message||e)+'. Try a different file or copy-paste the recipe text instead.');}
 }
 
 function proc(raw,imgData){
