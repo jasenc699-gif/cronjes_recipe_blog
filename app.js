@@ -446,7 +446,7 @@ function getEditListValues(containerId){
     .map(t=>t.value.trim()).filter(Boolean);
 }
 
-function saveEdit(){
+async function saveEdit(){
   const r=recs.find(x=>x.id===rid);if(!r)return;
   const title=document.getElementById('edit-title').value.trim();
   if(!title){document.getElementById('edit-title').focus();return;}
@@ -459,14 +459,17 @@ function saveEdit(){
   r.steps=getEditListValues('edit-steps-list');
   r.notes=document.getElementById('edit-notes').value.trim()||null;
   if(editPendingImg!==undefined){
-    // If the new image is an IDB upload, persist it now
     if(editPendingImg==='__idb__'&&_editPendingImgData){
-      ImgStore.set(r.id,_editPendingImgData);
+      // Await the write — if it fails, keep the base64 directly so the image isn't lost
+      const ok=await ImgStore.set(r.id,_editPendingImgData);
+      r.imageData=ok?'__idb__':_editPendingImgData;
     } else if(editPendingImg!=='__idb__'&&r.imageData==='__idb__'){
-      // Replacing an IDB image with an external URL — clean up old IDB entry
+      // Replacing an IDB image — clean up old entry (fire-and-forget is fine for cleanup)
       ImgStore.del(r.id);
+      r.imageData=editPendingImg;
+    } else {
+      r.imageData=editPendingImg;
     }
-    r.imageData=editPendingImg;
     _editPendingImgData=null;
   }
   r.savedAt=new Date().toISOString();
@@ -549,9 +552,11 @@ function saveCatEdit(){
   buildChips();
 }
 function togFav(){const r=recs.find(x=>x.id===rid);if(!r)return;r.favourite=!r.favourite;r.savedAt=new Date().toISOString();vibe('fav');updStar(r.favourite);save();}
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function renderCmts(r){
   const cmts=r.comments||[];
-  document.getElementById('cmtlist').innerHTML=cmts.length?cmts.map(c=>`<div class="cmtitem"><div class="cmttxt">${c.text}</div><div class="cmtrow"><div class="cmtdate">${fmtDate(c.date)}</div><button class="cmtrm" onclick="delCmt('${c.id}')">Remove</button></div></div>`).join(''):`<p style="font-size:13px;color:var(--mu);font-family:Arial,sans-serif;margin-bottom:10px;">No notes yet.</p>`;
+  // escHtml() prevents XSS — comment text was previously injected as raw innerHTML
+  document.getElementById('cmtlist').innerHTML=cmts.length?cmts.map(c=>`<div class="cmtitem"><div class="cmttxt">${escHtml(c.text)}</div><div class="cmtrow"><div class="cmtdate">${fmtDate(c.date)}</div><button class="cmtrm" onclick="delCmt('${c.id}')">Remove</button></div></div>`).join(''):`<p style="font-size:13px;color:var(--mu);font-family:Arial,sans-serif;margin-bottom:10px;">No notes yet.</p>`;
 }
 function postCmt(){const el=document.getElementById('cmtinp');const tx=el.value.trim();if(!tx)return;const r=recs.find(x=>x.id===rid);if(!r)return;if(!r.comments)r.comments=[];r.comments.push({id:Date.now().toString(),text:tx,date:new Date().toISOString()});r.savedAt=new Date().toISOString();el.value='';renderCmts(r);save();}
 function delCmt(cid){const r=recs.find(x=>x.id===rid);if(!r)return;r.comments=(r.comments||[]).filter(c=>c.id!==cid);r.savedAt=new Date().toISOString();renderCmts(r);save();}
@@ -637,6 +642,8 @@ function onImg(e){
       const c=await compressImage(ev.target.result);
       resolve({fb64:c,name:f.name});
     };
+    // Without onerror the Promise hangs forever if the read fails, freezing the UI
+    rd.onerror=()=>resolve(null);
     rd.readAsDataURL(f);
   });
 
@@ -694,9 +701,9 @@ function renderCatManager(){
   const all=[...CATS.map(c=>({c,custom:false})),...custom.map(c=>({c,custom:true}))];
   el.innerHTML=all.map(({c,custom})=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd);">
-      <span style="font-size:14px;">${catEmoji(c)} ${c}</span>
+      <span style="font-size:14px;">${catEmoji(c)} ${escHtml(c)}</span>
       ${custom
-        ?`<button onclick="deleteCustomCat('${c}')" style="background:none;border:1px solid #E0B0B0;color:#C05050;border-radius:20px;padding:4px 12px;font-size:12px;font-family:Arial,sans-serif;cursor:pointer;">Remove</button>`
+        ?`<button onclick="deleteCustomCat(${JSON.stringify(c)})" style="background:none;border:1px solid #E0B0B0;color:#C05050;border-radius:20px;padding:4px 12px;font-size:12px;font-family:Arial,sans-serif;cursor:pointer;">Remove</button>`
         :`<span style="font-size:11px;font-family:Arial,sans-serif;color:var(--mu);">Default</span>`}
     </div>`).join('');
 }
@@ -875,6 +882,9 @@ function clearAllData(){
   ].forEach(k=>store.remove(k));
   // Also clear session
   try{sessionStorage.clear();}catch(e){}
+  // Wipe IndexedDB image store — previously this was skipped, leaving all recipe photos
+  // orphaned in the database and consuming storage even after a full reset.
+  try{indexedDB.deleteDatabase('cronjes_imgs');}catch(e){}
   recs=[];
   alert('All data cleared. The app will now restart.');
   location.reload();
@@ -1047,7 +1057,15 @@ async function doBatchExtract(){
       const apiImg=await compressImage(img.fb64,600,0.60);
       const[hd,b64]=apiImg.split(',');const mime=hd.match(/:(.*?);/)[1];
       const raw=await callGroq([{inline_data:{mime_type:mime,data:b64}},{text:getPrompt()}]);
-      const d=JSON.parse(raw.replace(/```json|```/g,'').trim());
+      // Use the same multi-strategy parse as proc() so batch mode handles AI preamble/fences
+      let d=null;
+      const attempts6=[
+        ()=>JSON.parse(raw.replace(/```json|```/g,'').trim()),
+        ()=>{const m=raw.match(/\{[\s\S]*\}/);if(m)return JSON.parse(m[0]);throw new Error('no match');},
+        ()=>{const all=[...raw.matchAll(/\{[\s\S]*?\}/g)];if(all.length)return JSON.parse(all[all.length-1][0]);throw new Error('no match');}
+      ];
+      for(const a of attempts6){try{d=a();if(d&&d.title)break;}catch(e){d=null;}}
+      if(!d)throw new Error('no valid JSON');
       const aiCat=allCats().includes(d.category)?d.category:'Other';
       batchResults.push({
         rec:{id:(Date.now()+i*7).toString(),title:d.title||'Untitled Recipe',servings:d.servings||null,time:d.time||null,cuisine:d.cuisine||null,category:aiCat,ingredients:Array.isArray(d.ingredients)?d.ingredients:[],steps:Array.isArray(d.steps)?d.steps:[],notes:d.notes||null,imageData:null,emoji:FE[Math.floor(Math.random()*FE.length)],savedAt:new Date().toISOString(),favourite:false,comments:[]},
@@ -1055,7 +1073,7 @@ async function doBatchExtract(){
       });
     }catch(err){
       batchResults.push({
-        rec:{id:(Date.now()+i*7).toString(),title:img.name.replace(/\.[^.]+$/,'')||('Recipe '+(i+1)),category:'Other',ingredients:[],steps:[],emoji:'🍴',savedAt:new Date().toISOString(),favourite:false,comments:[]},
+        rec:{id:(Date.now()+i*7).toString(),title:img.name.replace(/\.[^.]+$/,'')||('Recipe '+(i+1)),servings:null,time:null,cuisine:null,category:'Other',ingredients:[],steps:[],notes:null,imageData:null,emoji:'🍴',savedAt:new Date().toISOString(),favourite:false,comments:[]},
         imgData:img.fb64,status:'error',error:err.message
       });
     }
@@ -1357,36 +1375,55 @@ function editOnImg(e){
 }
 async function applyHeroImage(id,url){
   const r=recs.find(x=>x.id===id);if(!r||r.imageData)return;
-  // Convert the external URL to base64 and store in IDB so it persists
-  // even when the source URL expires or the user is offline.
-  try{
-    const resp=await fetch(url);
-    if(!resp.ok)throw new Error('fetch failed');
+  // Fetch the image as a blob and convert to base64 so it is stored permanently
+  // in IDB — independent of the source URL ever expiring or going offline.
+  // Direct fetch almost always fails due to CORS on recipe sites, so we try the
+  // same set of CORS proxies used for HTML scraping before giving up.
+  const blobFromResp=async resp=>{
+    if(!resp.ok)throw new Error('bad status '+resp.status);
     const blob=await resp.blob();
-    const b64=await new Promise((res,rej)=>{
-      const rd=new FileReader();
-      rd.onload=()=>res(rd.result);
-      rd.onerror=rej;
-      rd.readAsDataURL(blob);
-    });
-    const compressed=await compressImage(b64,900,0.72);
-    const ok=await ImgStore.set(id,compressed);
-    if(ok){
-      r.imageData='__idb__';save();
-      if(rid===id){
-        const h=document.getElementById('dhero');
-        h.style.animation='';h.innerHTML=`<img src="${compressed}"/>`;h.style.minHeight='';
-      }
-      buildChips();
-      if(tab==='c')renderCats();else render();
-    }
-  }catch(e){
-    // Fallback: store the URL directly if we can't fetch/convert it
-    r.imageData=url;save();
-    if(rid===id){const h=document.getElementById('dhero');h.style.animation='';h.innerHTML=`<img src="${url}"/>`;h.style.minHeight='';}
-    buildChips();
-    if(tab==='c')renderCats();else render();
+    if(!blob||blob.size<200)throw new Error('empty blob');
+    if(blob.type&&blob.type.startsWith('text/'))throw new Error('got html not image');
+    return blob;
+  };
+  const fetchAttempts=[
+    ()=>fetch(url,{mode:'cors'}).then(blobFromResp),
+    ()=>fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`).then(blobFromResp),
+    ()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`).then(blobFromResp),
+    ()=>fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`).then(blobFromResp),
+  ];
+  let blob=null;
+  for(const attempt of fetchAttempts){
+    try{blob=await attempt();if(blob)break;}catch(e){blob=null;}
   }
+  if(blob){
+    try{
+      const b64=await new Promise((res,rej)=>{
+        const rd=new FileReader();
+        rd.onload=()=>res(rd.result);
+        rd.onerror=rej;
+        rd.readAsDataURL(blob);
+      });
+      const compressed=await compressImage(b64,900,0.72);
+      const ok=await ImgStore.set(id,compressed);
+      if(ok){
+        r.imageData='__idb__';save();
+        if(rid===id){
+          const h=document.getElementById('dhero');
+          h.style.animation='';h.innerHTML=`<img src="${compressed}"/>`;h.style.minHeight='';
+        }
+        buildChips();
+        if(tab==='c')renderCats();else render();
+        return;
+      }
+    }catch(e){/* conversion failed, fall through */}
+  }
+  // Last resort: store the raw URL. It will display now but may break later
+  // if the site's CDN link rotates. Better than no image at all.
+  r.imageData=url;save();
+  if(rid===id){const h=document.getElementById('dhero');h.style.animation='';h.innerHTML=`<img src="${url}"/>`;h.style.minHeight='';}
+  buildChips();
+  if(tab==='c')renderCats();else render();
 }
 
 
