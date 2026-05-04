@@ -881,9 +881,19 @@ function clearAllData(){
 }
 
 // BACKUP
-function exportBackup(){
+async function exportBackup(){
   if(!recs.length){alert('No recipes to export yet.');return;}
-  const blob=new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),recipes:recs},null,2)],{type:'application/json'});
+  // Resolve any IDB-stored images to their actual base64 data so the backup is
+  // self-contained. Without this, images were exported as '__idb__' (a sentinel
+  // string), meaning a re-import would permanently lose all recipe photos.
+  const recsWithImages=await Promise.all(recs.map(async r=>{
+    if(r.imageData==='__idb__'){
+      const imgData=await ImgStore.get(r.id);
+      return{...r,imageData:imgData||null};
+    }
+    return r;
+  }));
+  const blob=new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),recipes:recsWithImages},null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cronjes_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);
 }
 async function importBackup(e){
@@ -893,6 +903,17 @@ async function importBackup(e){
     const data=JSON.parse(await f.text());
     const incoming=Array.isArray(data)?data:(data.recipes||[]);
     if(!incoming.length){res.textContent='No recipes found in this file.';res.style.color='#a03030';res.style.display='block';return;}
+    // Move any base64 images from the backup into IDB, then replace with sentinel.
+    // Old backups stored '__idb__' (no image data); new backups store actual base64.
+    // Both cases are handled: __idb__ is left as-is, base64 is migrated.
+    let imgsRestored=0;
+    for(const r of incoming){
+      if(r.imageData&&r.imageData.startsWith('data:')){
+        const ok=await ImgStore.set(r.id,r.imageData);
+        if(ok){r.imageData='__idb__';imgsRestored++;}
+        // If IDB fails, leave base64 in place so image still displays (save() may strip it if localStorage is full)
+      }
+    }
     // Use the same timestamp-aware merge as cloud sync so the newest version of
     // each recipe wins — not just "skip if ID already exists".
     const prevCount=recs.length;
@@ -904,7 +925,8 @@ async function importBackup(e){
     }).length;
     recs=merged;save();buildChips();
     if(tab==='c')renderCats();else render();
-    res.textContent=`✓ Import complete: ${added} new recipe${added!==1?'s':''} added${updated>0?', '+updated+' updated from backup':''}. ${merged.length} total in collection.`;
+    const imgNote=imgsRestored>0?` ${imgsRestored} recipe photo${imgsRestored!==1?'s':''} restored.`:'';
+    res.textContent=`✓ Import complete: ${added} new recipe${added!==1?'s':''} added${updated>0?', '+updated+' updated from backup':''}. ${merged.length} total in collection.${imgNote}`;
     res.style.color='var(--tc)';res.style.display='block';
   }catch(err){res.textContent='Could not read file. Make sure it\'s a valid Cronjes backup.';res.style.color='#a03030';res.style.display='block';}
   e.target.value='';
@@ -1095,11 +1117,15 @@ function renderBatchList(){
   }
 }
 
-function saveBatchItem(i){
+async function saveBatchItem(i){
   const item=batchResults[i];if(!item)return;
   const sel=document.querySelector('#batch-item-'+i+' select');
   if(sel)item.rec.category=sel.value;
-  if(item.imgData){item.rec.imageData='__idb__';ImgStore.set(item.rec.id,item.imgData);}
+  if(item.imgData){
+    const ok=await ImgStore.set(item.rec.id,item.imgData);
+    if(ok){item.rec.imageData='__idb__';}
+    else{item.rec.imageData=item.imgData;} // fallback: keep base64 if IDB fails
+  }
   item.status='saved';
   recs.unshift(item.rec);save();vibe('save');
   renderBatchList();
@@ -1277,13 +1303,22 @@ function proc(raw,imgData){
     document.querySelector('#sadd .sa').scrollTop=9999;
   }catch(e){hideLoad();showErr('Could not parse the recipe. Please try again.');}
 }
-function confirmSave(){
+async function confirmSave(){
   if(!pendingRec)return;
   pendingRec.category=document.getElementById('catsel').value;
   const imgData=fb64; // user-uploaded photo (base64), if any
   if(imgData){
-    pendingRec.imageData='__idb__';
-    ImgStore.set(pendingRec.id,imgData); // async — store in IDB
+    // Await the IDB write so we know it actually succeeded before marking the recipe.
+    // Previously this was fire-and-forget — if the write raced with app backgrounding
+    // the sentinel '__idb__' was saved but nothing was in IDB, causing images to vanish.
+    const ok=await ImgStore.set(pendingRec.id,imgData);
+    if(ok){
+      pendingRec.imageData='__idb__';
+    } else {
+      // IDB write failed (quota or private-mode restriction) — keep base64 directly so
+      // the image is never silently lost. save() will strip it if localStorage is also full.
+      pendingRec.imageData=imgData;
+    }
   }
   const savedId=pendingRec.id;
   const hasPhoto=!!pendingRec.imageData;
