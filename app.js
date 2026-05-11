@@ -76,12 +76,20 @@ function load(){
       recs=main||bak||[];
     }
   }
-  if(!store.get(WK))go('welcome');
-  else if(!getKey())go('settings');
+  if(!store.get(WK)){
+    if(recs.length>0){
+      // WK was cleared by the browser (e.g. iOS storage pressure) but recipes survived.
+      // Recover gracefully — skip onboarding rather than forcing a fake "reset".
+      store.set(WK,'1');
+      if(!getKey())go('settings');
+      else{buildChips();render();go('main');}
+    }else{go('welcome');}
+  }else if(!getKey())go('settings');
   else{
-    // Restore last screen so app-switching doesn't lose your place
+    // Restore last screen so app-switching doesn't lose your place.
+    // 'detail' is excluded: rid is null after a full reload so the screen would be blank.
     const last=sessionStorage.getItem('cronjes_screen')||'main';
-    go(last==='welcome'||last==='add'?'main':last);
+    go(['welcome','add','detail'].includes(last)?'main':last);
   }
   // Migrate any legacy base64 images from localStorage → IndexedDB in background
   migrateImagesToIdb();
@@ -155,7 +163,7 @@ function go(s){
   const el=document.getElementById(ids[s]);
   if(!el)return;
   el.classList.add('on');
-  sessionStorage.setItem('cronjes_screen',s);
+  try{sessionStorage.setItem('cronjes_screen',s);}catch(e){}
   if(s==='add')resetAdd();
   if(s==='main'){if(editMode)exitEditMode();if(multiSelectMode)exitMultiSelect(true);buildChips();setTab('c');}
   if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();renderStorageBar();}
@@ -907,7 +915,7 @@ async function exportBackup(){
     }
     return r;
   }));
-  const blob=new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),recipes:recsWithImages},null,2)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),recipes:recsWithImages,customCategories:getCustomCats()},null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cronjes_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);
 }
 async function importBackup(e){
@@ -938,9 +946,18 @@ async function importBackup(e){
       return local&&(r.savedAt||'')>(local.savedAt||'');
     }).length;
     recs=merged;save();buildChips();
+    // Restore any custom categories saved in the backup that aren't already present.
+    let catsRestored=0;
+    if(Array.isArray(data.customCategories)&&data.customCategories.length){
+      const existingCustom=getCustomCats();
+      const allKnown=[...CATS,...existingCustom].map(c=>c.toLowerCase());
+      const toAdd=data.customCategories.filter(c=>typeof c==='string'&&c.trim()&&!allKnown.includes(c.trim().toLowerCase()));
+      if(toAdd.length){saveCustomCats([...existingCustom,...toAdd]);catsRestored=toAdd.length;renderCatManager();buildChips();}
+    }
     if(tab==='c')renderCats();else render();
     const imgNote=imgsRestored>0?` ${imgsRestored} recipe photo${imgsRestored!==1?'s':''} restored.`:'';
-    res.textContent=`✓ Import complete: ${added} new recipe${added!==1?'s':''} added${updated>0?', '+updated+' updated from backup':''}. ${merged.length} total in collection.${imgNote}`;
+    const catNote=catsRestored>0?` ${catsRestored} custom categor${catsRestored!==1?'ies':'y'} restored.`:'';
+    res.textContent=`✓ Import complete: ${added} new recipe${added!==1?'s':''} added${updated>0?', '+updated+' updated from backup':''}. ${merged.length} total in collection.${imgNote}${catNote}`;
     res.style.color='var(--tc)';res.style.display='block';
   }catch(err){res.textContent='Could not read file. Make sure it\'s a valid Cronjes backup.';res.style.color='#a03030';res.style.display='block';}
   e.target.value='';
