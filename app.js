@@ -1,5 +1,5 @@
 const SK='cronjes_blog_v1',KK='cronjes_apikey',WK='cronjes_welcomed',CK='cronjes_customcats';
-const SKB='cronjes_blog_v1_bak'; // backup key — written on every save so a killed mid-write never loses data
+const SKB='cronjes_blog_v1_bak'; // legacy localStorage backup key — kept only to clean up on first run after update
 const CATS=['Breakfast','Lunch','Dinner','Dessert','Snacks','Soups','Salads','Baking','Drinks','Other'];
 const CE={Breakfast:'🍳',Lunch:'🥙',Dinner:'🍽️',Dessert:'🍰',Snacks:'🧀',Soups:'🍲',Salads:'🥗',Baking:'🥐',Drinks:'🥤',Other:'🍴'};
 const CC={Breakfast:'#FFF0D0',Lunch:'#E2F2E0',Dinner:'#D5E8F5',Dessert:'#FFD6E8',Snacks:'#FFFAC0',Soups:'#FFE4C8',Salads:'#DCF2CC',Baking:'#F5E8D0',Drinks:'#CCE8F8',Other:'#E8E4DC'};
@@ -59,19 +59,37 @@ const ImgStore=(function(){
   return{get,set,del};
 })();
 
-function load(){
-  // Try main key first; fall back to backup if missing or corrupt.
-  // This guards against iOS killing the app mid-write and leaving partial JSON.
-  const tryParse=k=>{try{const v=store.get(k);return v?JSON.parse(v):null;}catch(e){return null;}};
-  const main=tryParse(SK);
+// ── IndexedDB Backup Store ───────────────────────────────────────────────────
+// Replaces the old localStorage SKB duplicate key. Stores the full recipe JSON
+// in IndexedDB so localStorage only ever holds one copy (SK), halving its usage.
+// Uses a reserved key '__recipe_backup__' in the existing imgs objectStore so
+// no database schema upgrade is needed.
+const IdbBackup=(function(){
+  const KEY='__recipe_backup__';
+  async function get(){try{return await ImgStore.get(KEY);}catch(e){return null;}}
+  async function set(json){try{return await ImgStore.set(KEY,json);}catch(e){return false;}}
+  async function del(){try{return await ImgStore.del(KEY);}catch(e){return false;}}
+  return{get,set,del};
+})();
+
+async function load(){
+  // Try main localStorage key first; fall back to IDB backup if missing or corrupt.
+  // IDB backup replaces the old localStorage SKB duplicate, halving localStorage usage.
+  const tryParse=s=>{try{return s?JSON.parse(s):null;}catch(e){return null;}};
+  const mainRaw=store.get(SK);
+  const main=tryParse(mainRaw);
+  // One-time cleanup: remove the old localStorage backup key if it still exists.
+  if(store.get(SKB)){store.remove(SKB);console.log('cronjes: removed legacy localStorage backup key');}
   if(Array.isArray(main)&&main.length>0){
     recs=main;
   } else {
-    const bak=tryParse(SKB);
+    // Main key missing/empty/corrupt — try IDB backup.
+    const bakRaw=await IdbBackup.get();
+    const bak=tryParse(bakRaw);
     if(Array.isArray(bak)&&bak.length>0){
       recs=bak;
-      save(); // re-write main key from backup
-      console.warn('cronjes: restored from backup storage key');
+      save(); // re-write main localStorage key from IDB backup
+      console.warn('cronjes: restored from IDB backup');
     } else {
       recs=main||bak||[];
     }
@@ -95,33 +113,30 @@ function load(){
   migrateImagesToIdb();
 }
 function save(){
-  // Write backup FIRST so if the app is killed mid-write on the main key,
-  // the backup is already intact and load() can restore from it.
-  // Base64 images can easily exceed the 5-10 MB localStorage quota on iOS Safari.
-  // Strategy: try full save; if quota is exceeded strip base64 data URIs (keep
-  // external URLs which are tiny), then try again; only alert on total failure.
+  // localStorage holds only ONE copy of the recipe JSON (SK).
+  // The backup lives in IndexedDB (IdbBackup) — no more duplicated localStorage key.
+  // Strategy: try full save to localStorage; if quota is exceeded strip base64 data
+  // URIs (keep external URLs which are tiny), then try again; alert on total failure.
+  let savedJson=null;
   const _write=json=>{
-    // Use localStorage directly so we can catch quota errors that store.set swallows.
-    try{localStorage.setItem(SKB,json);localStorage.setItem(SK,json);return true;}
-    catch(e){
-      // Fall back to in-memory so the current session still works.
-      _mem[SKB]=json;_mem[SK]=json;return false;
-    }
+    try{localStorage.setItem(SK,json);savedJson=json;return true;}
+    catch(e){_mem[SK]=json;savedJson=json;return false;}
   };
   try{
     const json=JSON.stringify(recs);
     if(!_write(json)){
       // Quota hit — strip base64 data URIs (uploaded photos) and retry.
-      // External image URLs (https://…) are kept; they're tiny strings.
       const slim=recs.map(r=>({...r,imageData:(r.imageData&&r.imageData.startsWith('data:'))?null:r.imageData}));
       const slimJson=JSON.stringify(slim);
       if(!_write(slimJson)){
-        // Still failing — storage is completely full.
         alert('⚠️ Storage is full — your latest changes could not be saved.\nGo to Settings → Export All Recipes to back up your data, then clear some space.');
       } else {
         console.warn('cronjes: saved without uploaded photos (base64) to free up storage. External image URLs were kept.');
       }
     }
+    // Write backup to IDB in the background — fire-and-forget.
+    // IDB has no meaningful quota cap so this rarely fails.
+    if(savedJson)IdbBackup.set(savedJson).catch(()=>{});
   }catch(e){console.error('cronjes: save error',e);}
 }
 function welcomeDone(){store.set(WK,'1');if(!getKey())go('settings');else{buildChips();render();go('main');}}
@@ -892,6 +907,8 @@ function clearAllData(){
   [SK,SKB,KK,WK,CK,FBK,FBSK,FBID,'cronjes_lastsync','cronjes_screen',
    'cronjes_keydraft','cronjes_fburl_draft','cronjes_fbsecret_draft','cronjes_fbsid_draft'
   ].forEach(k=>store.remove(k));
+  // Also clear the IDB backup (the deleteDatabase call below clears images, but IdbBackup is in the same store)
+  IdbBackup.del().catch(()=>{});
   // Also clear session
   try{sessionStorage.clear();}catch(e){}
   // Wipe IndexedDB image store — previously this was skipped, leaving all recipe photos
@@ -1514,8 +1531,8 @@ window.addEventListener('appinstalled',hideInstallBanner);
   }
 })();
 
-document.addEventListener('DOMContentLoaded', function(){
-  try{ load(); }
+document.addEventListener('DOMContentLoaded', async function(){
+  try{ await load(); }
   catch(e){
     document.body.innerHTML='<div style="padding:40px;font-family:Arial,sans-serif;color:#a03030;"><h2>App Error</h2><pre style="font-size:12px;white-space:pre-wrap;">'+e.stack+'</pre></div>';
   }
