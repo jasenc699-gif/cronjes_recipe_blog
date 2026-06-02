@@ -962,15 +962,19 @@ async function importBackup(e){
       const local=recs.find(x=>x.id===r.id);
       return local&&(r.savedAt||'')>(local.savedAt||'');
     }).length;
-    recs=merged;save();buildChips();
-    // Restore any custom categories saved in the backup that aren't already present.
+    // Restore any custom categories saved in the backup FIRST — before buildChips/render
+    // so the new categories are available when the UI rebuilds.
     let catsRestored=0;
     if(Array.isArray(data.customCategories)&&data.customCategories.length){
       const existingCustom=getCustomCats();
       const allKnown=[...CATS,...existingCustom].map(c=>c.toLowerCase());
       const toAdd=data.customCategories.filter(c=>typeof c==='string'&&c.trim()&&!allKnown.includes(c.trim().toLowerCase()));
-      if(toAdd.length){saveCustomCats([...existingCustom,...toAdd]);catsRestored=toAdd.length;renderCatManager();buildChips();}
+      if(toAdd.length){saveCustomCats([...existingCustom,...toAdd]);catsRestored=toAdd.length;}
     }
+    recs=merged;save();
+    // Rebuild chips now that custom categories are restored
+    buildChips();
+    if(catsRestored>0)renderCatManager();
     if(tab==='c')renderCats();else render();
     const imgNote=imgsRestored>0?` ${imgsRestored} recipe photo${imgsRestored!==1?'s':''} restored.`:'';
     const catNote=catsRestored>0?` ${catsRestored} custom categor${catsRestored!==1?'ies':'y'} restored.`:'';
@@ -1318,12 +1322,28 @@ function extractOgImage(html){
 function jsonLdToJson(r){
   const stripHtml=s=>(s||'').replace(/<[^>]+>/g,' ').replace(/\s{2,}/g,' ').trim();
   const ingredients=(r.recipeIngredient||[]).map(stripHtml).filter(Boolean);
-  const steps=(r.recipeInstructions||[]).map(s=>{
-    if(typeof s==='string')return stripHtml(s);
-    if(s.text)return stripHtml(s.text);
-    if(s.itemListElement)return s.itemListElement.map(x=>stripHtml(x.text||x)).join(' ');
-    return '';
-  }).filter(Boolean);
+  // Flatten recipeInstructions — handles HowToStep (string or {text}),
+  // HowToSection ({itemListElement:[HowToStep,…]}), and plain arrays.
+  function flattenInstructions(arr){
+    const out=[];
+    for(const s of arr){
+      if(!s)continue;
+      if(typeof s==='string'){const t=stripHtml(s);if(t)out.push(t);continue;}
+      // HowToSection — recurse into itemListElement
+      if(s['@type']==='HowToSection'||Array.isArray(s.itemListElement)){
+        const sub=s.itemListElement||[];
+        for(const x of sub){
+          const t=stripHtml(x.text||x.name||x)||'';if(t)out.push(t);
+        }
+        continue;
+      }
+      // HowToStep with text
+      if(s.text){const t=stripHtml(s.text);if(t)out.push(t);continue;}
+      if(s.name){const t=stripHtml(s.name);if(t)out.push(t);}
+    }
+    return out;
+  }
+  const steps=flattenInstructions(r.recipeInstructions||[]);
   const time=r.totalTime||r.cookTime||r.prepTime||null;
   const fmtTime=t=>{if(!t)return null;const m=t.match(/(\d+)H.*?(\d+)M|(\d+)H|(\d+)M/i);if(!m)return t;if(m[1]&&m[2])return m[1]+'h '+m[2]+'min';if(m[3])return m[3]+'h';if(m[4])return m[4]+' min';return t;};
   const servings=r.recipeYield?(Array.isArray(r.recipeYield)?r.recipeYield[0]:r.recipeYield).toString():null;
