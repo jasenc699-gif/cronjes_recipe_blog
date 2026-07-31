@@ -106,7 +106,7 @@ async function load(){
   else{
     // Restore last screen so app-switching doesn't lose your place.
     // 'detail' is excluded: rid is null after a full reload so the screen would be blank.
-    const last=sessionStorage.getItem('cronjes_screen')||'main';
+    const last=store.get('cronjes_screen')||'main';
     go(['welcome','add','detail'].includes(last)?'main':last);
   }
   // Migrate any legacy base64 images from localStorage → IndexedDB in background
@@ -178,10 +178,10 @@ function go(s){
   const el=document.getElementById(ids[s]);
   if(!el)return;
   el.classList.add('on');
-  try{sessionStorage.setItem('cronjes_screen',s);}catch(e){}
+  store.set('cronjes_screen',s);
   if(s==='add')resetAdd();
   if(s==='main'){if(editMode)exitEditMode();if(multiSelectMode)exitMultiSelect(true);buildChips();setTab('c');}
-  if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';loadSyncFields();renderCatManager();renderStorageBar();}
+  if(s==='settings'){showKinfo();document.getElementById('impresult').style.display='none';renderCatManager();renderStorageBar();}
 }
 
 function setTab(t){
@@ -758,50 +758,7 @@ function deleteCustomCat(c){
   save();renderCatManager();buildChips();render();
 }
 
-// ── Firebase Realtime Database Sync ───────────────────────────────────────
-const FBK='cronjes_fburl';   // database URL
-const FBSK='cronjes_fbsecret'; // database secret
-const FBID='cronjes_fbsyncid'; // sync node name
-
-function loadSyncFields(){
-  const url=store.get(FBK)||store.get('cronjes_fburl_draft')||'';
-  const sid=store.get(FBID)||store.get('cronjes_fbsid_draft')||'cronjes';
-  // Restore typed-but-unsaved values from draft store
-  const urlEl=document.getElementById('jbbin');
-  const keyEl=document.getElementById('jbkey');
-  const sidEl=document.getElementById('fbsyncid');
-  if(urlEl)urlEl.value=url;
-  if(keyEl)keyEl.value=''; // never show secret in field for security, but restore if draft exists
-  const secretDraft=store.get('cronjes_fbsecret_draft')||'';
-  if(keyEl&&secretDraft)keyEl.value=secretDraft;
-  if(sidEl)sidEl.value=sid;
-  const si=document.getElementById('syncinfo');
-  const last=store.get('cronjes_lastsync');
-  if(url){
-    si.textContent='Database: '+url.replace('https://','').split('.')[0]+(last?' · Last synced: '+new Date(last).toLocaleString('en-NZ',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'');
-    si.style.display='block';
-  }else{si.style.display='none';}
-  // Wire up auto-save on every keystroke so switching apps never loses input
-  if(urlEl&&!urlEl._autoSave){urlEl._autoSave=true;urlEl.addEventListener('input',()=>store.set('cronjes_fburl_draft',urlEl.value.trim()));}
-  if(keyEl&&!keyEl._autoSave){keyEl._autoSave=true;keyEl.addEventListener('input',()=>store.set('cronjes_fbsecret_draft',keyEl.value.trim()));}
-  if(sidEl&&!sidEl._autoSave){sidEl._autoSave=true;sidEl.addEventListener('input',()=>store.set('cronjes_fbsid_draft',sidEl.value.trim()));}
-}
-
-function saveSyncCreds(){
-  const url=(document.getElementById('jbbin').value.trim()||store.get('cronjes_fburl_draft')||'').replace(/\/+$/,'');
-  const secret=document.getElementById('jbkey').value.trim()||store.get('cronjes_fbsecret_draft')||'';
-  const sid=((document.getElementById('fbsyncid')?.value||store.get('cronjes_fbsid_draft')||'cronjes').trim().replace(/[^a-zA-Z0-9_-]/g,'-'))||'cronjes';
-  if(url){store.set(FBK,url);store.remove('cronjes_fburl_draft');}
-  if(secret){store.set(FBSK,secret);store.remove('cronjes_fbsecret_draft');}
-  store.set(FBID,sid);store.remove('cronjes_fbsid_draft');
-  return{url:url||store.get(FBK)||'',secret:secret||store.get(FBSK)||'',sid};
-}
-
-function setSyncResult(msg,ok){
-  const el=document.getElementById('syncresult');
-  el.textContent=msg;el.style.color=ok?'var(--tc)':'#a03030';el.style.display='block';
-}
-
+// ── Recipe merge helper (used by Backup & Restore import) ────────────────
 function mergeRecipes(local,remote){
   // Pass 1: id-based dedup.
   // Iterate remote first, then local — local is processed LAST so it wins on
@@ -815,63 +772,6 @@ function mergeRecipes(local,remote){
     if(!existing||rTs>=exTs)idMap.set(r.id,r);
   });
   return [...idMap.values()].sort((a,b)=>(b.savedAt||'').localeCompare(a.savedAt||''));
-}
-
-async function syncNow(){
-  const{url,secret,sid}=saveSyncCreds();
-  if(!url){setSyncResult('Please enter your Firebase Database URL first.',false);return;}
-  setSyncResult('Syncing…',true);
-  const endpoint=`${url}/cronjes_sync/${sid}.json${secret?'?auth='+encodeURIComponent(secret):''}`;
-  try{
-    // GET remote data
-    const gr=await fetch(endpoint);
-    if(!gr.ok)throw new Error('Read failed: '+gr.status+' '+gr.statusText);
-    const remote=await gr.json();
-
-    // Firebase RTDB sometimes returns a numeric-keyed object instead of an array
-    // when elements have been partially updated. Normalise to a plain array.
-    let remoteRecs=remote?.recipes||[];
-    if(!Array.isArray(remoteRecs))remoteRecs=Object.values(remoteRecs).filter(r=>r&&r.id);
-
-    // Safety guard: never let an empty cloud response wipe a non-empty local collection.
-    // This prevents data loss when Firebase is unreachable, returns null, or was
-    // accidentally cleared — and also guards against a corrupt local load().
-    if(remoteRecs.length===0&&recs.length>0){
-      // Still push local data up so the cloud is populated, but don't wipe local.
-      const pw=await fetch(endpoint,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipes:recs,syncedAt:new Date().toISOString(),device:navigator.userAgent.slice(0,60)})});
-      if(!pw.ok)throw new Error('Write failed: '+pw.status+' '+pw.statusText);
-      store.set('cronjes_lastsync',new Date().toISOString());
-      loadSyncFields();
-      setSyncResult(`✓ Synced! Pushed ${recs.length} recipe${recs.length!==1?'s':''} to cloud (cloud was empty).`,true);
-      return;
-    }
-
-    // Merge local + remote
-    const merged=mergeRecipes(recs,remoteRecs);
-
-    // Final safety check: merged should never be empty if either side had data.
-    if(merged.length===0&&(recs.length>0||remoteRecs.length>0)){
-      throw new Error('Merge produced no recipes unexpectedly — sync aborted to protect your data. Please try again.');
-    }
-
-    // PUT merged back
-    const pw=await fetch(endpoint,{
-      method:'PUT',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({recipes:merged,syncedAt:new Date().toISOString(),device:navigator.userAgent.slice(0,60)})
-    });
-    if(!pw.ok)throw new Error('Write failed: '+pw.status+' '+pw.statusText);
-
-    const prevIds=new Set(recs.map(r=>r.id));
-    const added=merged.filter(m=>!prevIds.has(m.id)).length;
-    recs=merged;save();buildChips();
-    if(tab==='c')renderCats();else render();
-    store.set('cronjes_lastsync',new Date().toISOString());
-    loadSyncFields();
-    setSyncResult(`✓ Synced! ${merged.length} recipe${merged.length!==1?'s':''} in collection.${added>0?'\n'+added+' new recipe'+(added!==1?'s':'')+' pulled from cloud.':''}`,true);
-  }catch(e){
-    setSyncResult('Sync failed: '+(e.message||String(e))+'\n\nYour local recipes are untouched. Check your Database URL and secret, and ensure Firebase rules allow read/write.',false);
-  }
 }
 
 function getStorageStats(){
@@ -904,9 +804,7 @@ function renderStorageBar(){
 function clearAllData(){
   if(!confirm('This will permanently delete ALL your recipes, your API key, and all settings.\n\nHave you exported a backup? This cannot be undone.'))return;
   // Clear every known key
-  [SK,SKB,KK,WK,CK,FBK,FBSK,FBID,'cronjes_lastsync','cronjes_screen',
-   'cronjes_keydraft','cronjes_fburl_draft','cronjes_fbsecret_draft','cronjes_fbsid_draft'
-  ].forEach(k=>store.remove(k));
+  [SK,SKB,KK,WK,CK,'cronjes_screen','cronjes_keydraft'].forEach(k=>store.remove(k));
   // Also clear the IDB backup (the deleteDatabase call below clears images, but IdbBackup is in the same store)
   IdbBackup.del().catch(()=>{});
   // Also clear session
@@ -953,8 +851,8 @@ async function importBackup(e){
         // If IDB fails, leave base64 in place so image still displays (save() may strip it if localStorage is full)
       }
     }
-    // Use the same timestamp-aware merge as cloud sync so the newest version of
-    // each recipe wins — not just "skip if ID already exists".
+    // Timestamp-aware merge so the newest version of each recipe wins —
+    // not just "skip if ID already exists".
     const prevCount=recs.length;
     const merged=mergeRecipes(recs,incoming);
     const added=merged.length-prevCount;
@@ -1000,8 +898,12 @@ async function callGroq(parts){
   const key=getKey();if(!key)throw new Error('No API key. Tap ⚙️ Settings.');
   // Detect whether any part is an image — if so, use the vision model.
   // For text-only extraction (URL/doc/search), use the stronger text model.
+  // Groq retired meta-llama/llama-4-scout-17b-16e-instruct on 07/17/26 (this was
+  // why the screenshot reader stopped working) — qwen/qwen3.6-27b is its replacement.
+  // llama-3.3-70b-versatile is also scheduled for shutdown on 08/16/26, so it's
+  // swapped for openai/gpt-oss-120b now to avoid the same failure recurring.
   const hasImage=parts.some(p=>p.inline_data);
-  const model=hasImage?'meta-llama/llama-4-scout-17b-16e-instruct':'llama-3.3-70b-versatile';
+  const model=hasImage?'qwen/qwen3.6-27b':'openai/gpt-oss-120b';
   const msgs=parts.map(p=>p.text?{type:'text',text:p.text}:p.inline_data?{type:'image_url',image_url:{url:`data:${p.inline_data.mime_type};base64,${p.inline_data.data}`}}:null).filter(Boolean);
   const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model,max_tokens:4096,temperature:0.1,messages:[{role:'user',content:msgs}]})});
   const d=await res.json();if(d.error)throw new Error(d.error.message||'Groq error');
