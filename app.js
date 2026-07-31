@@ -1,5 +1,11 @@
 const SK='cronjes_blog_v1',KK='cronjes_apikey',WK='cronjes_welcomed',CK='cronjes_customcats';
 const SKB='cronjes_blog_v1_bak'; // legacy localStorage backup key — kept only to clean up on first run after update
+
+// Your own CORS proxy (Cloudflare Worker) for fetching recipe pages/photos from other
+// sites. Set this after deploying — see PROXY_SETUP.md. Tried first, before the free
+// public proxies (allorigins/corsproxy/codetabs), which have no uptime guarantee and
+// can change their API without notice. Leave blank ('') to skip straight to those.
+const CRONJES_PROXY='';
 const CATS=['Breakfast','Lunch','Dinner','Dessert','Snacks','Soups','Salads','Baking','Drinks','Other'];
 const CE={Breakfast:'🍳',Lunch:'🥙',Dinner:'🍽️',Dessert:'🍰',Snacks:'🧀',Soups:'🍲',Salads:'🥗',Baking:'🥐',Drinks:'🥤',Other:'🍴'};
 const CC={Breakfast:'#FFF0D0',Lunch:'#E2F2E0',Dinner:'#D5E8F5',Dessert:'#FFD6E8',Snacks:'#FFFAC0',Soups:'#FFE4C8',Salads:'#DCF2CC',Baking:'#F5E8D0',Drinks:'#CCE8F8',Other:'#E8E4DC'};
@@ -594,10 +600,18 @@ async function delRecipe(){if(!confirm('Delete this recipe?'))return;vibe('delet
 async function shareRecipe(){
   const r=recs.find(x=>x.id===rid);if(!r)return;
   vibe('tap');
+  // Resolve the image WITHOUT an await before navigator.share(). iOS/Safari (and some
+  // Android browsers) revoke the "user activation" that share() needs if there's any
+  // async gap — like an IndexedDB read — between the tap and the call. That's what was
+  // causing the "don't have permission to share" error. The detail screen's hero image
+  // is already resolved and sitting in the DOM as a data: URI by the time someone taps
+  // Share, so read it from there instead — that's synchronous.
+  let imageData=r.imageData;
+  if(imageData==='__idb__'){
+    const heroImg=document.querySelector('#dhero img');
+    imageData=(heroImg&&heroImg.src.startsWith('data:'))?heroImg.src:null;
+  }
   try{
-    // Resolve an IDB-stored image to real base64 so the shared file is self-contained
-    let imageData=r.imageData;
-    if(imageData==='__idb__')imageData=await ImgStore.get(r.id)||null;
     const payload={version:1,sharedAt:new Date().toISOString(),recipes:[{...r,imageData}]};
     if(r.category&&!CATS.includes(r.category))payload.customCategories=[r.category];
     const json=JSON.stringify(payload,null,2);
@@ -872,52 +886,58 @@ async function exportBackup(){
   const blob=new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),recipes:recsWithImages,customCategories:getCustomCats()},null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cronjes_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);
 }
+// Shared import logic — used by both manual file import (below) and the
+// Web Share Target auto-import (see handleIncomingShare()).
+async function importRecipesPayload(data){
+  const incoming=Array.isArray(data)?data:(data.recipes||[]);
+  if(!incoming.length)throw new Error('No recipes found in this file.');
+  // Move any base64 images from the backup into IDB, then replace with sentinel.
+  // Old backups stored '__idb__' (no image data); new backups store actual base64.
+  // Both cases are handled: __idb__ is left as-is, base64 is migrated.
+  let imgsRestored=0;
+  for(const r of incoming){
+    if(r.imageData&&r.imageData.startsWith('data:')){
+      const ok=await ImgStore.set(r.id,r.imageData);
+      if(ok){r.imageData='__idb__';imgsRestored++;}
+      // If IDB fails, leave base64 in place so image still displays (save() may strip it if localStorage is full)
+    }
+  }
+  // Timestamp-aware merge so the newest version of each recipe wins —
+  // not just "skip if ID already exists".
+  const prevCount=recs.length;
+  const merged=mergeRecipes(recs,incoming);
+  const added=merged.length-prevCount;
+  const updated=incoming.filter(r=>{
+    const local=recs.find(x=>x.id===r.id);
+    return local&&(r.savedAt||'')>(local.savedAt||'');
+  }).length;
+  // Restore any custom categories saved in the backup FIRST — before buildChips/render
+  // so the new categories are available when the UI rebuilds.
+  let catsRestored=0;
+  if(Array.isArray(data.customCategories)&&data.customCategories.length){
+    const existingCustom=getCustomCats();
+    const allKnown=[...CATS,...existingCustom].map(c=>c.toLowerCase());
+    const toAdd=data.customCategories.filter(c=>typeof c==='string'&&c.trim()&&!allKnown.includes(c.trim().toLowerCase()));
+    if(toAdd.length){saveCustomCats([...existingCustom,...toAdd]);catsRestored=toAdd.length;}
+  }
+  recs=merged;save();
+  // Rebuild chips now that custom categories are restored
+  buildChips();
+  if(catsRestored>0)renderCatManager();
+  if(tab==='c')renderCats();else render();
+  const imgNote=imgsRestored>0?` ${imgsRestored} recipe photo${imgsRestored!==1?'s':''} restored.`:'';
+  const catNote=catsRestored>0?` ${catsRestored} custom categor${catsRestored!==1?'ies':'y'} restored.`:'';
+  return{added,updated,total:merged.length,message:`✓ Import complete: ${added} new recipe${added!==1?'s':''} added${updated>0?', '+updated+' updated from backup':''}. ${merged.length} total in collection.${imgNote}${catNote}`};
+}
 async function importBackup(e){
   const f=e.target.files[0];if(!f)return;
   const res=document.getElementById('impresult');
   try{
     const data=JSON.parse(await f.text());
-    const incoming=Array.isArray(data)?data:(data.recipes||[]);
-    if(!incoming.length){res.textContent='No recipes found in this file.';res.style.color='#a03030';res.style.display='block';return;}
-    // Move any base64 images from the backup into IDB, then replace with sentinel.
-    // Old backups stored '__idb__' (no image data); new backups store actual base64.
-    // Both cases are handled: __idb__ is left as-is, base64 is migrated.
-    let imgsRestored=0;
-    for(const r of incoming){
-      if(r.imageData&&r.imageData.startsWith('data:')){
-        const ok=await ImgStore.set(r.id,r.imageData);
-        if(ok){r.imageData='__idb__';imgsRestored++;}
-        // If IDB fails, leave base64 in place so image still displays (save() may strip it if localStorage is full)
-      }
-    }
-    // Timestamp-aware merge so the newest version of each recipe wins —
-    // not just "skip if ID already exists".
-    const prevCount=recs.length;
-    const merged=mergeRecipes(recs,incoming);
-    const added=merged.length-prevCount;
-    const updated=incoming.filter(r=>{
-      const local=recs.find(x=>x.id===r.id);
-      return local&&(r.savedAt||'')>(local.savedAt||'');
-    }).length;
-    // Restore any custom categories saved in the backup FIRST — before buildChips/render
-    // so the new categories are available when the UI rebuilds.
-    let catsRestored=0;
-    if(Array.isArray(data.customCategories)&&data.customCategories.length){
-      const existingCustom=getCustomCats();
-      const allKnown=[...CATS,...existingCustom].map(c=>c.toLowerCase());
-      const toAdd=data.customCategories.filter(c=>typeof c==='string'&&c.trim()&&!allKnown.includes(c.trim().toLowerCase()));
-      if(toAdd.length){saveCustomCats([...existingCustom,...toAdd]);catsRestored=toAdd.length;}
-    }
-    recs=merged;save();
-    // Rebuild chips now that custom categories are restored
-    buildChips();
-    if(catsRestored>0)renderCatManager();
-    if(tab==='c')renderCats();else render();
-    const imgNote=imgsRestored>0?` ${imgsRestored} recipe photo${imgsRestored!==1?'s':''} restored.`:'';
-    const catNote=catsRestored>0?` ${catsRestored} custom categor${catsRestored!==1?'ies':'y'} restored.`:'';
-    res.textContent=`✓ Import complete: ${added} new recipe${added!==1?'s':''} added${updated>0?', '+updated+' updated from backup':''}. ${merged.length} total in collection.${imgNote}${catNote}`;
+    const result=await importRecipesPayload(data);
+    res.textContent=result.message;
     res.style.color='var(--tc)';res.style.display='block';
-  }catch(err){res.textContent='Could not read file. Make sure it\'s a valid Cronjes backup.';res.style.color='#a03030';res.style.display='block';}
+  }catch(err){res.textContent=err.message==='No recipes found in this file.'?err.message:'Could not read file. Make sure it\'s a valid Cronjes backup.';res.style.color='#a03030';res.style.display='block';}
   e.target.value='';
 }
 
@@ -1193,7 +1213,12 @@ Pick categories from: ${allCats().join(', ')}. ingredients and steps must be arr
   await extDoc();
 }
 async function fetchViaProxy(u){
-  const proxies=[()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`),()=>fetch(`https://corsproxy.io/?url=${encodeURIComponent(u)}`),()=>fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`)];
+  const proxies=[
+    ...(CRONJES_PROXY?[()=>fetch(`${CRONJES_PROXY}/?url=${encodeURIComponent(u)}`)]:[]),
+    ()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`),
+    ()=>fetch(`https://corsproxy.io/?url=${encodeURIComponent(u)}`),
+    ()=>fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`)
+  ];
   for(const p of proxies){try{const r=await p();if(r.ok){const t=await r.text();if(t&&t.length>100)return t;}}catch(e){}}
   throw new Error('All proxies failed — try saving the recipe as a Word doc instead.');
 }
@@ -1413,6 +1438,7 @@ async function applyHeroImage(id,url){
   };
   const fetchAttempts=[
     ()=>fetch(url,{mode:'cors'}).then(blobFromResp),
+    ...(CRONJES_PROXY?[()=>fetch(`${CRONJES_PROXY}/?url=${encodeURIComponent(url)}`).then(blobFromResp)]:[]),
     ()=>fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`).then(blobFromResp),
     ()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`).then(blobFromResp),
     ()=>fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`).then(blobFromResp),
@@ -1492,8 +1518,31 @@ window.addEventListener('appinstalled',hideInstallBanner);
   }
 })();
 
+// ── Web Share Target — auto-import a recipe shared TO Cronjes from another app ──
+// Android/Chrome only: iOS Safari doesn't support share_target, so on iPhone
+// sharing still lands via Settings → Import instead. See sw.js for the POST
+// handler that stashes the shared file before redirecting here.
+async function handleIncomingShare(){
+  const params=new URLSearchParams(location.search);
+  if(params.get('shared')!=='1')return;
+  // Clean the URL immediately so a refresh doesn't re-trigger the import
+  history.replaceState(null,'',location.pathname);
+  try{
+    const cache=await caches.open('cronjes-share');
+    const res=await cache.match('/__shared-recipe');
+    if(!res){alert('No shared recipe found — it may have expired. Please try sharing again.');return;}
+    const data=JSON.parse(await res.text());
+    await cache.delete('/__shared-recipe');
+    const result=await importRecipesPayload(data);
+    go('main');
+    alert(result.message);
+  }catch(e){
+    alert('Could not import the shared recipe. ('+(e.message||e)+')');
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async function(){
-  try{ await load(); }
+  try{ await load(); await handleIncomingShare(); }
   catch(e){
     document.body.innerHTML='<div style="padding:40px;font-family:Arial,sans-serif;color:#a03030;"><h2>App Error</h2><pre style="font-size:12px;white-space:pre-wrap;">'+e.stack+'</pre></div>';
   }
