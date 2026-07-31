@@ -1,4 +1,4 @@
-const CACHE = 'cronjes-v6';
+const CACHE = 'cronjes-v8';
 const CORE = ['./index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {

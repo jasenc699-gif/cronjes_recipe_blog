@@ -160,6 +160,7 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
 .edit-add{background:none;border:1.5px dashed var(--bds);border-radius:10px;padding:10px;font-size:13px;font-family:Arial,sans-serif;color:var(--tc);width:100%;cursor:pointer;text-align:center;margin-top:2px;}
 .edit-add:active{background:var(--tcl);}
 #dedit-btn{background:none;border:none;cursor:pointer;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border-radius:50%;}
+#dshare-btn{background:none;border:none;cursor:pointer;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border-radius:50%;}
 
 /* MULTI-SELECT */
 .rc.ms-selected{border:2.5px solid var(--tc);box-shadow:0 0 0 3px var(--tcl);}
@@ -421,6 +422,9 @@ body{font-family:Georgia,serif;-webkit-tap-highlight-color:transparent;}
       <div style="display:flex;align-items:center;flex-shrink:0;">
         <button id="dedit-btn" onclick="toggleEditMode()" title="Edit recipe">
           <svg id="dedit-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4A9090" stroke-width="1.8"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button id="dshare-btn" onclick="shareRecipe()" title="Share recipe">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4A9090" stroke-width="1.8"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
         </button>
         <button id="starbtn" onclick="togFav()" style="background:none;border:none;cursor:pointer;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;padding:0;">
           <svg id="starsvg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4A9090" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>

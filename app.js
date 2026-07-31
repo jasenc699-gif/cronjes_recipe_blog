@@ -586,6 +586,45 @@ function delCmt(cid){const r=recs.find(x=>x.id===rid);if(!r)return;r.comments=(r
 function fmtDate(iso){const d=new Date(iso);return d.toLocaleDateString('en-NZ',{day:'numeric',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-NZ',{hour:'2-digit',minute:'2-digit'});}
 async function delRecipe(){if(!confirm('Delete this recipe?'))return;vibe('delete');await ImgStore.del(rid);recs=recs.filter(r=>r.id!==rid);save();goBack();}
 
+// ── Share a single recipe with another app user ───────────────────────────
+// No server involved: the recipe is packaged in the same JSON shape as a full
+// backup (see exportBackup), just with one recipe in it. That means the
+// person receiving it can add it with the existing Settings → Import Backup
+// flow — no new import code needed on the other end.
+async function shareRecipe(){
+  const r=recs.find(x=>x.id===rid);if(!r)return;
+  vibe('tap');
+  try{
+    // Resolve an IDB-stored image to real base64 so the shared file is self-contained
+    let imageData=r.imageData;
+    if(imageData==='__idb__')imageData=await ImgStore.get(r.id)||null;
+    const payload={version:1,sharedAt:new Date().toISOString(),recipes:[{...r,imageData}]};
+    if(r.category&&!CATS.includes(r.category))payload.customCategories=[r.category];
+    const json=JSON.stringify(payload,null,2);
+    const safeName=(r.title||'recipe').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40)||'recipe';
+    const fileName='cronjes_'+safeName+'.json';
+    const file=new File([json],fileName,{type:'application/json'});
+    const shareText=(r.title||'A recipe')+' — shared from Cronjes. Open it in Cronjes → Settings → Import to add it to your collection.';
+
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      await navigator.share({files:[file],title:r.title||'Recipe',text:shareText});
+    }else if(navigator.share){
+      // Browser supports sharing but not files — save it locally and let them attach it manually
+      downloadJson(json,fileName);
+      alert('Your browser can\'t share files directly, so the recipe was saved as a file instead.\n\nAttach it to a message any way you like — the other person can add it via Settings → Import.');
+    }else{
+      downloadJson(json,fileName);
+      alert('Recipe saved as a file. Send it to the other person however you like (Messages, email, AirDrop...) — they can add it via Settings → Import.');
+    }
+  }catch(e){
+    if(e.name!=='AbortError')alert('Could not share recipe. ('+(e.message||e)+')');
+  }
+}
+function downloadJson(json,fileName){
+  const blob=new Blob([json],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fileName;a.click();URL.revokeObjectURL(a.href);
+}
+
 
 function resetAdd(){
   mode='p';fb64=null;dtxt=null;pendingRec=null;pendingImgUrl=null;multiImgs=[];batchResults=[];
@@ -1154,7 +1193,7 @@ Pick categories from: ${allCats().join(', ')}. ingredients and steps must be arr
   await extDoc();
 }
 async function fetchViaProxy(u){
-  const proxies=[()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`),()=>fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`),()=>fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`)];
+  const proxies=[()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`),()=>fetch(`https://corsproxy.io/?url=${encodeURIComponent(u)}`),()=>fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`)];
   for(const p of proxies){try{const r=await p();if(r.ok){const t=await r.text();if(t&&t.length>100)return t;}}catch(e){}}
   throw new Error('All proxies failed — try saving the recipe as a Word doc instead.');
 }
@@ -1374,7 +1413,7 @@ async function applyHeroImage(id,url){
   };
   const fetchAttempts=[
     ()=>fetch(url,{mode:'cors'}).then(blobFromResp),
-    ()=>fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`).then(blobFromResp),
+    ()=>fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`).then(blobFromResp),
     ()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`).then(blobFromResp),
     ()=>fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`).then(blobFromResp),
   ];
